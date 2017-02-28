@@ -1,6 +1,6 @@
-﻿using System;
+using System;
 
-namespace Bridge.Ioc
+namespace Bridge.Ioc.Abstract
 {
         public interface IIoc
         {

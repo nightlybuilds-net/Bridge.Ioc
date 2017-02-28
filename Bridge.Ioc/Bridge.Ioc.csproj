@@ -38,15 +38,15 @@
   <ItemGroup>
     <Compile Include="App.cs" />
     <Compile Include="BridgeIoc.cs" />
-    <Compile Include="FuncResolver.cs" />
+    <Compile Include="Resolvers\FuncResolver.cs" />
     <Compile Include="Gino.cs" />
     <Compile Include="IHaveName.cs" />
-    <Compile Include="IIoc.cs" />
-    <Compile Include="InstanceResolver.cs" />
-    <Compile Include="IResolver.cs" />
+    <Compile Include="Abstract\IIoc.cs" />
+    <Compile Include="Resolvers\InstanceResolver.cs" />
+    <Compile Include="Abstract\IResolver.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="SingleInstanceResolver.cs" />
-    <Compile Include="TransientResolver.cs" />
+    <Compile Include="Resolvers\SingleInstanceResolver.cs" />
+    <Compile Include="Resolvers\TransientResolver.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Bridge\output\readme.txt" />

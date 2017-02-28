@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Bridge.Ioc
+namespace Bridge.Ioc.Abstract
 {
         public interface IResolver
         {
