@@ -11,7 +11,5 @@ namespace Bridge.Ioc.Resolvers
         {
             this.Resolve = () => resolveFunc();
         }
-
     }
-
 }

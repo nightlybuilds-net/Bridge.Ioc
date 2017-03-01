@@ -3,16 +3,13 @@ using Bridge.Ioc.Abstract;
 
 namespace Bridge.Ioc.Resolvers
 {
-        public class InstanceResolver<T> : IResolver
+    public class InstanceResolver<T> : IResolver
+    {
+        public Func<object> Resolve { get; set; }
+
+        public InstanceResolver(T resolvedObj)
         {
-            public Func<object> Resolve { get; set; }
-
-            public InstanceResolver(T resolvedObj)
-            {
-                this.Resolve = () => resolvedObj;
-            }
-
+            this.Resolve = () => resolvedObj;
         }
-
-
+    }
 }

@@ -17,19 +17,16 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
     Bridge.define("Bridge.Ioc.App", {
         $main: function () {
             try {
-                var msg = "Hello, World!";
-                Bridge.Console.log(msg);
-
                 var ioc = new Bridge.Ioc.BridgeIoc();
 
                 ioc.register(Bridge.Ioc.IPippo, Bridge.Ioc.Pippo);
-                ioc.register(Bridge.Ioc.IHaveName, Bridge.Ioc.Gino);
+                //ioc.Register<IHaveName, Gino>();
 
 
 
                 //ioc.RegisterFunc<IHaveName>(() => { return new Gino(ioc.Resolve<IPippo>()); });
 
-                //ioc.RegisterInstance<IHaveName>(new Gino());
+                ioc.registerInstance(Bridge.Ioc.IHaveName, new Bridge.Ioc.Gino(new Bridge.Ioc.Pippo()));
 
                 //ioc.RegisterSingleInstance<IHaveName,Gino>();
 
@@ -57,13 +54,24 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
         $kind: "interface"
     });
 
+    /** @namespace Bridge.Ioc */
+
+    /**
+     * Implementation of IIoc
+     *
+     * @public
+     * @class Bridge.Ioc.BridgeIoc
+     * @implements  Bridge.Ioc.Abstract.IIoc
+     */
     Bridge.define("Bridge.Ioc.BridgeIoc", {
         inherits: [Bridge.Ioc.Abstract.IIoc],
         _resolvers: null,
         config: {
             alias: [
             "register", "Bridge$Ioc$Abstract$IIoc$register",
+            "registerSingleInstance", "Bridge$Ioc$Abstract$IIoc$registerSingleInstance",
             "registerFunc", "Bridge$Ioc$Abstract$IIoc$registerFunc",
+            "registerInstance", "Bridge$Ioc$Abstract$IIoc$registerInstance",
             "resolve", "Bridge$Ioc$Abstract$IIoc$resolve",
             "resolve$1", "Bridge$Ioc$Abstract$IIoc$resolve$1"
             ],

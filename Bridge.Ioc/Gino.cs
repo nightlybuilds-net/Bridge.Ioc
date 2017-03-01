@@ -42,4 +42,7 @@ namespace Bridge.Ioc
     {
         int PippoAge { get; set; }
     }
+
+    
+
 }

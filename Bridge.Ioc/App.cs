@@ -11,19 +11,16 @@ namespace Bridge.Ioc
         {
             try
             {
-                var msg = "Hello, World!";
-                Console.WriteLine(msg);
-
                 var ioc = new BridgeIoc();
 
                 ioc.Register<IPippo, Pippo>();
-                ioc.Register<IHaveName, Gino>();
+                //ioc.Register<IHaveName, Gino>();
 
                 
 
                 //ioc.RegisterFunc<IHaveName>(() => { return new Gino(ioc.Resolve<IPippo>()); });
 
-                //ioc.RegisterInstance<IHaveName>(new Gino());
+                ioc.RegisterInstance<IHaveName>(new Gino(new Pippo()));
 
                 //ioc.RegisterSingleInstance<IHaveName,Gino>();
 
