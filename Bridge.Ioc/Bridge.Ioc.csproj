@@ -36,11 +36,8 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="App.cs" />
     <Compile Include="BridgeIoc.cs" />
     <Compile Include="Resolvers\FuncResolver.cs" />
-    <Compile Include="Gino.cs" />
-    <Compile Include="IHaveName.cs" />
     <Compile Include="Abstract\IIoc.cs" />
     <Compile Include="Resolvers\InstanceResolver.cs" />
     <Compile Include="Abstract\IResolver.cs" />

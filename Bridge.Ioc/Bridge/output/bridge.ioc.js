@@ -14,46 +14,6 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
         $kind: "interface"
     });
 
-    Bridge.define("Bridge.Ioc.App", {
-        $main: function () {
-            try {
-                var ioc = new Bridge.Ioc.BridgeIoc();
-
-                ioc.register(Bridge.Ioc.IPippo, Bridge.Ioc.Pippo);
-                //ioc.Register<IHaveName, Gino>();
-
-
-
-                //ioc.RegisterFunc<IHaveName>(() => { return new Gino(ioc.Resolve<IPippo>()); });
-
-                ioc.registerInstance(Bridge.Ioc.IHaveName, new Bridge.Ioc.Gino(new Bridge.Ioc.Pippo()));
-
-                //ioc.RegisterSingleInstance<IHaveName,Gino>();
-
-
-                var obj = ioc.resolve(Bridge.Ioc.IHaveName);
-                obj.Bridge$Ioc$IHaveName$printName();
-
-                var obj2 = ioc.resolve(Bridge.Ioc.IHaveName);
-                Bridge.Console.log(Bridge.equals(obj, obj2));
-
-            }
-            catch (ex) {
-                ex = System.Exception.create(ex);
-                Bridge.Console.log(ex);
-            }
-
-        }
-    });
-
-    Bridge.define("Bridge.Ioc.IHaveName", {
-        $kind: "interface"
-    });
-
-    Bridge.define("Bridge.Ioc.IPippo", {
-        $kind: "interface"
-    });
-
     /** @namespace Bridge.Ioc */
 
     /**
@@ -68,7 +28,9 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
         _resolvers: null,
         config: {
             alias: [
+            "register$1", "Bridge$Ioc$Abstract$IIoc$register$1",
             "register", "Bridge$Ioc$Abstract$IIoc$register",
+            "registerSingleInstance$1", "Bridge$Ioc$Abstract$IIoc$registerSingleInstance$1",
             "registerSingleInstance", "Bridge$Ioc$Abstract$IIoc$registerSingleInstance",
             "registerFunc", "Bridge$Ioc$Abstract$IIoc$registerFunc",
             "registerInstance", "Bridge$Ioc$Abstract$IIoc$registerInstance",
@@ -79,17 +41,23 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
                 this._resolvers = new (System.Collections.Generic.Dictionary$2(Function,Bridge.Ioc.Abstract.IResolver))();
             }
         },
-        register: function (TType, TImplementation) {
+        register$1: function (TType, TImplementation) {
             this.checkAlreadyAdded(TType);
 
             var resolver = new (Bridge.Ioc.Resolvers.TransientResolver$1(TImplementation))(this);
             this._resolvers.add(TType, resolver);
         },
-        registerSingleInstance: function (TType, TImplementation) {
+        register: function (TType) {
+            this.register$1(TType, TType);
+        },
+        registerSingleInstance$1: function (TType, TImplementation) {
             this.checkAlreadyAdded(TType);
 
             var resolver = new (Bridge.Ioc.Resolvers.SingleInstanceResolver$1(TImplementation))(this);
             this._resolvers.add(TType, resolver);
+        },
+        registerSingleInstance: function (TType) {
+            this.registerSingleInstance$1(TType, TType);
         },
         registerFunc: function (TType, func) {
             this.checkAlreadyAdded(TType);
@@ -127,50 +95,6 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
         },
         checkNotRegistered$1: function (TType) {
             this.checkNotRegistered(TType);
-        }
-    });
-
-    Bridge.define("Bridge.Ioc.Gino", {
-        inherits: [Bridge.Ioc.IHaveName],
-        pippo: null,
-        _age: 0,
-        config: {
-            properties: {
-                Name: null
-            },
-            alias: [
-            "getName", "Bridge$Ioc$IHaveName$getName",
-            "setName", "Bridge$Ioc$IHaveName$setName",
-            "printName", "Bridge$Ioc$IHaveName$printName"
-            ]
-        },
-        ctor: function (pippo) {
-            this.$initialize();
-            Bridge.Console.log("Gino is alive!");
-            this.setName("Gino");
-            this._age = pippo.Bridge$Ioc$IPippo$getPippoAge();
-        },
-        printName: function () {
-            Bridge.Console.log(System.String.format("Hello my name is {0}!", this.getName()));
-            Bridge.Console.log(System.String.format("Pippo is injected and his age is {0}", this._age));
-
-        }
-    });
-
-    Bridge.define("Bridge.Ioc.Pippo", {
-        inherits: [Bridge.Ioc.IPippo],
-        config: {
-            properties: {
-                PippoAge: 0
-            },
-            alias: [
-            "getPippoAge", "Bridge$Ioc$IPippo$getPippoAge",
-            "setPippoAge", "Bridge$Ioc$IPippo$setPippoAge"
-            ]
-        },
-        ctor: function () {
-            this.$initialize();
-            this.setPippoAge(50);
         }
     });
 
@@ -282,9 +206,4 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
             });
         }
     }; });
-
-    var $m = Bridge.setMetadata,
-        $n = [Bridge.Ioc,System];
-    $m($n[0].Gino, function () { return {"att":1048577,"a":2,"m":[{"a":2,"n":".ctor","t":1,"p":[$n[0].IPippo],"pi":[{"n":"pippo","pt":$n[0].IPippo,"ps":0}],"sn":"ctor"},{"a":2,"n":"PrintName","t":8,"sn":"printName","rt":Object},{"a":2,"n":"Name","t":16,"rt":String,"g":{"a":2,"n":"get_Name","t":8,"sn":"getName","rt":String},"s":{"a":2,"n":"set_Name","t":8,"pi":[{"n":"value","pt":String,"ps":0}],"sn":"setName","rt":Object,"p":[String]}},{"a":1,"n":"_age","t":4,"rt":$n[1].Int32,"sn":"_age"},{"a":1,"n":"pippo","t":4,"rt":String,"sn":"pippo"}]}; });
-    $m($n[0].Pippo, function () { return {"att":1048577,"a":2,"m":[{"a":2,"n":".ctor","t":1,"sn":"ctor"},{"a":2,"n":"PippoAge","t":16,"rt":$n[1].Int32,"g":{"a":2,"n":"get_PippoAge","t":8,"sn":"getPippoAge","rt":$n[1].Int32},"s":{"a":2,"n":"set_PippoAge","t":8,"pi":[{"n":"value","pt":$n[1].Int32,"ps":0}],"sn":"setPippoAge","rt":Object,"p":[$n[1].Int32]}}]}; });
 });
