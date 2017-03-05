@@ -6,106 +6,82 @@
 Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
     "use strict";
 
-    Bridge.define("Bridge.Ioc.App", {
-        $main: function () {
-            try {
-                var msg = "Hello, World!";
-                Bridge.Console.log(msg);
-
-                var ioc = new Bridge.Ioc.BridgeIoc();
-
-                ioc.register(Bridge.Ioc.IPippo, Bridge.Ioc.Pippo);
-                ioc.register(Bridge.Ioc.IHaveName, Bridge.Ioc.Gino);
-
-
-
-                //ioc.RegisterFunc<IHaveName>(() => { return new Gino(ioc.Resolve<IPippo>()); });
-
-                //ioc.RegisterInstance<IHaveName>(new Gino());
-
-                //ioc.RegisterSingleInstance<IHaveName,Gino>();
-
-
-                var obj = ioc.resolve(Bridge.Ioc.IHaveName);
-                obj.Bridge$Ioc$IHaveName$printName();
-
-                var obj2 = ioc.resolve(Bridge.Ioc.IHaveName);
-                Bridge.Console.log(Bridge.equals(obj, obj2));
-
-            }
-            catch (ex) {
-                ex = System.Exception.create(ex);
-                Bridge.Console.log(ex);
-            }
-
-        }
-    });
-
-    Bridge.define("Bridge.Ioc.IIoc", {
+    Bridge.define("Bridge.Ioc.Abstract.IIoc", {
         $kind: "interface"
     });
 
-    Bridge.define("Bridge.Ioc.IResolver", {
+    Bridge.define("Bridge.Ioc.Abstract.IResolver", {
         $kind: "interface"
     });
 
-    Bridge.define("Bridge.Ioc.IHaveName", {
-        $kind: "interface"
-    });
+    /** @namespace Bridge.Ioc */
 
-    Bridge.define("Bridge.Ioc.IPippo", {
-        $kind: "interface"
-    });
-
+    /**
+     * Implementation of IIoc
+     *
+     * @public
+     * @class Bridge.Ioc.BridgeIoc
+     * @implements  Bridge.Ioc.Abstract.IIoc
+     */
     Bridge.define("Bridge.Ioc.BridgeIoc", {
-        inherits: [Bridge.Ioc.IIoc],
+        inherits: [Bridge.Ioc.Abstract.IIoc],
         _resolvers: null,
         config: {
             alias: [
-            "register", "Bridge$Ioc$IIoc$register",
-            "registerFunc", "Bridge$Ioc$IIoc$registerFunc",
-            "resolve", "Bridge$Ioc$IIoc$resolve",
-            "resolve$1", "Bridge$Ioc$IIoc$resolve$1"
+            "register$1", "Bridge$Ioc$Abstract$IIoc$register$1",
+            "register", "Bridge$Ioc$Abstract$IIoc$register",
+            "registerSingleInstance$1", "Bridge$Ioc$Abstract$IIoc$registerSingleInstance$1",
+            "registerSingleInstance", "Bridge$Ioc$Abstract$IIoc$registerSingleInstance",
+            "registerFunc", "Bridge$Ioc$Abstract$IIoc$registerFunc",
+            "registerInstance", "Bridge$Ioc$Abstract$IIoc$registerInstance",
+            "resolve", "Bridge$Ioc$Abstract$IIoc$resolve",
+            "resolve$1", "Bridge$Ioc$Abstract$IIoc$resolve$1"
             ],
             init: function () {
-                this._resolvers = new (System.Collections.Generic.Dictionary$2(Function,Bridge.Ioc.IResolver))();
+                this._resolvers = new (System.Collections.Generic.Dictionary$2(Function,Bridge.Ioc.Abstract.IResolver))();
             }
         },
-        register: function (TType, TImplementation) {
+        register$1: function (TType, TImplementation) {
             this.checkAlreadyAdded(TType);
 
-            var resolver = new (Bridge.Ioc.TransientResolver$1(TImplementation))(this);
+            var resolver = new (Bridge.Ioc.Resolvers.TransientResolver$1(TImplementation))(this);
             this._resolvers.add(TType, resolver);
         },
-        registerSingleInstance: function (TType, TImplementation) {
+        register: function (TType) {
+            this.register$1(TType, TType);
+        },
+        registerSingleInstance$1: function (TType, TImplementation) {
             this.checkAlreadyAdded(TType);
 
-            var resolver = new (Bridge.Ioc.SingleInstanceResolver$1(TImplementation))(this);
+            var resolver = new (Bridge.Ioc.Resolvers.SingleInstanceResolver$1(TImplementation))(this);
             this._resolvers.add(TType, resolver);
+        },
+        registerSingleInstance: function (TType) {
+            this.registerSingleInstance$1(TType, TType);
         },
         registerFunc: function (TType, func) {
             this.checkAlreadyAdded(TType);
 
-            var resolver = new (Bridge.Ioc.FuncResolver$1(TType))(func);
+            var resolver = new (Bridge.Ioc.Resolvers.FuncResolver$1(TType))(func);
             this._resolvers.add(TType, resolver);
         },
         registerInstance: function (TType, instance) {
             this.checkAlreadyAdded(TType);
 
-            var resolver = new (Bridge.Ioc.InstanceResolver$1(TType))(instance);
+            var resolver = new (Bridge.Ioc.Resolvers.InstanceResolver$1(TType))(instance);
             this._resolvers.add(TType, resolver);
         },
         resolve: function (TType) {
             this.checkNotRegistered$1(TType);
 
             var resolver = this._resolvers.get(TType);
-            return Bridge.cast(resolver.Bridge$Ioc$IResolver$getResolve()(), TType);
+            return Bridge.cast(resolver.Bridge$Ioc$Abstract$IResolver$getResolve()(), TType);
         },
         resolve$1: function (type) {
             this.checkNotRegistered(type);
 
             var resolver = this._resolvers.get(type);
-            return resolver.Bridge$Ioc$IResolver$getResolve()();
+            return resolver.Bridge$Ioc$Abstract$IResolver$getResolve()();
         },
         checkAlreadyAdded: function (TType) {
             if (this._resolvers.containsKey(TType)) {
@@ -122,15 +98,15 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
         }
     });
 
-    Bridge.define("Bridge.Ioc.FuncResolver$1", function (T) { return {
-        inherits: [Bridge.Ioc.IResolver],
+    Bridge.define("Bridge.Ioc.Resolvers.FuncResolver$1", function (T) { return {
+        inherits: [Bridge.Ioc.Abstract.IResolver],
         config: {
             properties: {
                 Resolve: null
             },
             alias: [
-            "getResolve", "Bridge$Ioc$IResolver$getResolve",
-            "setResolve", "Bridge$Ioc$IResolver$setResolve"
+            "getResolve", "Bridge$Ioc$Abstract$IResolver$getResolve",
+            "setResolve", "Bridge$Ioc$Abstract$IResolver$setResolve"
             ]
         },
         ctor: function (resolveFunc) {
@@ -141,42 +117,15 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
         }
     }; });
 
-    Bridge.define("Bridge.Ioc.Gino", {
-        inherits: [Bridge.Ioc.IHaveName],
-        pippo: null,
-        _age: 0,
-        config: {
-            properties: {
-                Name: null
-            },
-            alias: [
-            "getName", "Bridge$Ioc$IHaveName$getName",
-            "setName", "Bridge$Ioc$IHaveName$setName",
-            "printName", "Bridge$Ioc$IHaveName$printName"
-            ]
-        },
-        ctor: function (pippo) {
-            this.$initialize();
-            Bridge.Console.log("Gino is alive!");
-            this.setName("Gino");
-            this._age = pippo.Bridge$Ioc$IPippo$getPippoAge();
-        },
-        printName: function () {
-            Bridge.Console.log(System.String.format("Hello my name is {0}!", this.getName()));
-            Bridge.Console.log(System.String.format("Pippo is injected and his age is {0}", this._age));
-
-        }
-    });
-
-    Bridge.define("Bridge.Ioc.InstanceResolver$1", function (T) { return {
-        inherits: [Bridge.Ioc.IResolver],
+    Bridge.define("Bridge.Ioc.Resolvers.InstanceResolver$1", function (T) { return {
+        inherits: [Bridge.Ioc.Abstract.IResolver],
         config: {
             properties: {
                 Resolve: null
             },
             alias: [
-            "getResolve", "Bridge$Ioc$IResolver$getResolve",
-            "setResolve", "Bridge$Ioc$IResolver$setResolve"
+            "getResolve", "Bridge$Ioc$Abstract$IResolver$getResolve",
+            "setResolve", "Bridge$Ioc$Abstract$IResolver$setResolve"
             ]
         },
         ctor: function (resolvedObj) {
@@ -187,25 +136,8 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
         }
     }; });
 
-    Bridge.define("Bridge.Ioc.Pippo", {
-        inherits: [Bridge.Ioc.IPippo],
-        config: {
-            properties: {
-                PippoAge: 0
-            },
-            alias: [
-            "getPippoAge", "Bridge$Ioc$IPippo$getPippoAge",
-            "setPippoAge", "Bridge$Ioc$IPippo$setPippoAge"
-            ]
-        },
-        ctor: function () {
-            this.$initialize();
-            this.setPippoAge(50);
-        }
-    });
-
-    Bridge.define("Bridge.Ioc.SingleInstanceResolver$1", function (T) { return {
-        inherits: [Bridge.Ioc.IResolver],
+    Bridge.define("Bridge.Ioc.Resolvers.SingleInstanceResolver$1", function (T) { return {
+        inherits: [Bridge.Ioc.Abstract.IResolver],
         statics: {
             _singleInstance: Bridge.getDefaultValue(T)
         },
@@ -214,33 +146,33 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
                 Resolve: null
             },
             alias: [
-            "getResolve", "Bridge$Ioc$IResolver$getResolve",
-            "setResolve", "Bridge$Ioc$IResolver$setResolve"
+            "getResolve", "Bridge$Ioc$Abstract$IResolver$getResolve",
+            "setResolve", "Bridge$Ioc$Abstract$IResolver$setResolve"
             ]
         },
         ctor: function (ioc) {
             this.$initialize();
             this.setResolve(function () {
                 // first resolve. Using transient resolver
-                if (Bridge.Ioc.SingleInstanceResolver$1(T)._singleInstance == null) {
-                    var transientResolver = new (Bridge.Ioc.TransientResolver$1(T))(ioc);
-                    Bridge.Ioc.SingleInstanceResolver$1(T)._singleInstance = Bridge.cast(transientResolver.getResolve()(), T);
+                if (Bridge.Ioc.Resolvers.SingleInstanceResolver$1(T)._singleInstance == null) {
+                    var transientResolver = new (Bridge.Ioc.Resolvers.TransientResolver$1(T))(ioc);
+                    Bridge.Ioc.Resolvers.SingleInstanceResolver$1(T)._singleInstance = Bridge.cast(transientResolver.getResolve()(), T);
                 }
 
-                return Bridge.Ioc.SingleInstanceResolver$1(T)._singleInstance;
+                return Bridge.Ioc.Resolvers.SingleInstanceResolver$1(T)._singleInstance;
             });
         }
     }; });
 
-    Bridge.define("Bridge.Ioc.TransientResolver$1", function (T) { return {
-        inherits: [Bridge.Ioc.IResolver],
+    Bridge.define("Bridge.Ioc.Resolvers.TransientResolver$1", function (T) { return {
+        inherits: [Bridge.Ioc.Abstract.IResolver],
         config: {
             properties: {
                 Resolve: null
             },
             alias: [
-            "getResolve", "Bridge$Ioc$IResolver$getResolve",
-            "setResolve", "Bridge$Ioc$IResolver$setResolve"
+            "getResolve", "Bridge$Ioc$Abstract$IResolver$getResolve",
+            "setResolve", "Bridge$Ioc$Abstract$IResolver$setResolve"
             ]
         },
         ctor: function (ioc) {
@@ -266,7 +198,7 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
                     $t = Bridge.getEnumerator(ctorParams);
                     while ($t.moveNext()) {
                         var parameterInfo = $t.getCurrent();
-                        parameters.add(ioc.Bridge$Ioc$IIoc$resolve$1(parameterInfo.pt));
+                        parameters.add(ioc.Bridge$Ioc$Abstract$IIoc$resolve$1(parameterInfo.pt));
                     }
 
                     return Bridge.Reflection.invokeCI($ctor, parameters.toArray());
@@ -274,9 +206,4 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
             });
         }
     }; });
-
-    var $m = Bridge.setMetadata,
-        $n = [Bridge.Ioc,System];
-    $m($n[0].Gino, function () { return {"att":1048577,"a":2,"m":[{"a":2,"n":".ctor","t":1,"p":[$n[0].IPippo],"pi":[{"n":"pippo","pt":$n[0].IPippo,"ps":0}],"sn":"ctor"},{"a":2,"n":"PrintName","t":8,"sn":"printName","rt":Object},{"a":2,"n":"Name","t":16,"rt":String,"g":{"a":2,"n":"get_Name","t":8,"sn":"getName","rt":String},"s":{"a":2,"n":"set_Name","t":8,"pi":[{"n":"value","pt":String,"ps":0}],"sn":"setName","rt":Object,"p":[String]}},{"a":1,"n":"_age","t":4,"rt":$n[1].Int32,"sn":"_age"},{"a":1,"n":"pippo","t":4,"rt":String,"sn":"pippo"}]}; });
-    $m($n[0].Pippo, function () { return {"att":1048577,"a":2,"m":[{"a":2,"n":".ctor","t":1,"sn":"ctor"},{"a":2,"n":"PippoAge","t":16,"rt":$n[1].Int32,"g":{"a":2,"n":"get_PippoAge","t":8,"sn":"getPippoAge","rt":$n[1].Int32},"s":{"a":2,"n":"set_PippoAge","t":8,"pi":[{"n":"value","pt":$n[1].Int32,"ps":0}],"sn":"setPippoAge","rt":Object,"p":[$n[1].Int32]}}]}; });
 });

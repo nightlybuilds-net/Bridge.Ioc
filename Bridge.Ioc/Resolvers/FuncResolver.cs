@@ -1,6 +1,7 @@
 ﻿using System;
+using Bridge.Ioc.Abstract;
 
-namespace Bridge.Ioc
+namespace Bridge.Ioc.Resolvers
 {
     public class FuncResolver<T> : IResolver
     {
@@ -10,7 +11,5 @@ namespace Bridge.Ioc
         {
             this.Resolve = () => resolveFunc();
         }
-
     }
-
 }
