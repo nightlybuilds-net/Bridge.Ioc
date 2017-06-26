@@ -6,12 +6,12 @@ Nuget package avaiable [www.nuget.org/packages/Bridge.Ioc](www.nuget.org/package
 See example app.
 ###Example of registrations:
 
-  var secondContainer = new BridgeIoc();
-  secondContainer.RegisterFunc<ISum>(() => new Adder()); 
-  secondContainer.RegisterInstance<ISubtract>(new Subtractor()); 
-  secondContainer.RegisterSingleInstance<ICalc, Calculator>(); 
-  secondContainer.Register<IFoo, Foo>(); 
-  secondContainer.Register<AConcreteFoo>(); 
+    var secondContainer = new BridgeIoc();
+    secondContainer.RegisterFunc<ISum>(() => new Adder()); 
+    secondContainer.RegisterInstance<ISubtract>(new Subtractor()); 
+    secondContainer.RegisterSingleInstance<ICalc, Calculator>(); 
+    secondContainer.Register<IFoo, Foo>(); 
+    secondContainer.Register<AConcreteFoo>(); 
 
 ###Resolve
 
