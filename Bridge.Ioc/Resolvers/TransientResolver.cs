@@ -1,9 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Bridge.Ioc.Abstract;
 
-namespace Bridge.Ioc.Resolvers
+namespace Bridge.Ioc
 {
     public class TransientResolver<T> : IResolver
     {

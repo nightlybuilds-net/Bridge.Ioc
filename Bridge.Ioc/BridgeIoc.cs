@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Bridge.Ioc.Abstract;
-using Bridge.Ioc.Resolvers;
 
 namespace Bridge.Ioc
 {
