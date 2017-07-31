@@ -1,7 +1,6 @@
 ﻿using System;
-using Bridge.Ioc.Abstract;
 
-namespace Bridge.Ioc.Resolvers
+namespace Bridge.Ioc
 {
     public class SingleInstanceResolver<T> : IResolver
     {
