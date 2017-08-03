@@ -1,7 +1,7 @@
 /**
  * @version 1.0.0.0
  * @copyright Copyright ©  2017
- * @compiler Bridge.NET 16.0.0-rc
+ * @compiler Bridge.NET 16.0.0
  */
 Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
     "use strict";
