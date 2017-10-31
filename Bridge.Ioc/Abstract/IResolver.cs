@@ -2,7 +2,7 @@
 
 namespace Bridge.Ioc
 {
-    internal interface IResolver
+    public interface IResolver
     {
         Func<object> Resolve { get; set; }
     }
