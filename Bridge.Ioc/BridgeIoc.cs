@@ -11,31 +11,57 @@ namespace Bridge.Ioc
         private readonly Dictionary<Type, IResolver> _resolvers = new Dictionary<Type, IResolver>();
 
         #region REGISTRATION
+
+        public void Register(Type type, IResolver resolver)
+        {
+            CheckAlreadyAdded(type);
+            _resolvers.Add(type, resolver);
+        }
+
+        public void Register(Type type, Type impl)
+        {
+            CheckAlreadyAdded(type);
+
+            var resolver = new TransientResolver(this, impl);
+            _resolvers.Add(type, resolver);
+        }
+
         public void Register<TType, TImplementation>() where TImplementation : class, TType
         {
-            CheckAlreadyAdded<TType>();
+            Register(typeof(TType), typeof(TImplementation));
+        }
 
-            var resolver = new TransientResolver<TImplementation>(this);
-            _resolvers.Add(typeof(TType), resolver);
+        public void Register(Type type)
+        {
+            Register(type, type);
         }
 
         public void Register<TType>() where TType : class
         {
-            this.Register<TType,TType>();
+            Register(typeof(TType));
         }
 
+        public void RegisterSingleInstance(Type type, Type impl)
+        {
+            CheckAlreadyAdded(type);
+
+            var resolver = new SingleInstanceResolver(this, impl);
+            _resolvers.Add(type, resolver);
+        }
 
         public void RegisterSingleInstance<TType, TImplementation>() where TImplementation : class, TType
         {
-            CheckAlreadyAdded<TType>();
+            RegisterSingleInstance(typeof(TType), typeof(TImplementation));
+        }
 
-            var resolver = new SingleInstanceResolver<TImplementation>(this);
-            _resolvers.Add(typeof(TType), resolver);
+        public void RegisterSingleInstance(Type type)
+        {
+            RegisterSingleInstance(type, type);
         }
 
         public void RegisterSingleInstance<TType>() where TType : class
         {
-            this.RegisterSingleInstance<TType,TType>();
+            RegisterSingleInstance(typeof(TType));
         }
 
         public void RegisterFunc<TType>(Func<TType> func)
@@ -46,12 +72,22 @@ namespace Bridge.Ioc
             _resolvers.Add(typeof(TType), resolver);
         }
 
+        public void RegisterInstance(Type type, object instance)
+        {
+            CheckAlreadyAdded(type);
+
+            var resolver = new InstanceResolver(instance);
+            _resolvers.Add(type, resolver);
+        }
+
+        public void RegisterInstance(object instance)
+        {
+            RegisterInstance(instance.GetType(), instance);
+        }
+
         public void RegisterInstance<TType>(TType instance)
         {
-            CheckAlreadyAdded<TType>();
-
-            var resolver = new InstanceResolver<TType>(instance);
-            _resolvers.Add(typeof(TType), resolver);
+            RegisterInstance((object)instance);
         }
         #endregion
 
@@ -76,10 +112,16 @@ namespace Bridge.Ioc
 
 
         #region PRIVATE
+
+        private void CheckAlreadyAdded(Type type)
+        {
+            if (_resolvers.ContainsKey(type))
+                throw new Exception($"{type.FullName} is already registered!");
+        }
+
         private void CheckAlreadyAdded<TType>()
         {
-            if (_resolvers.ContainsKey(typeof(TType)))
-                throw new Exception($"{typeof(TType).FullName} is already registered!");
+            CheckAlreadyAdded(typeof(TType));
         }
 
         private void CheckNotRegistered(Type type)
@@ -92,8 +134,6 @@ namespace Bridge.Ioc
         {
             CheckNotRegistered(typeof(TType));
         }
-
-       
 
         #endregion
     }
