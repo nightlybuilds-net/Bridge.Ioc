@@ -4,16 +4,14 @@ using System.Linq;
 
 namespace Bridge.Ioc
 {
-    public class TransientResolver<T> : IResolver
+    public class TransientResolver : IResolver
     {
         public Func<object> Resolve { get; set; }
 
-        public TransientResolver(IIoc ioc)
+        public TransientResolver(IIoc ioc, Type toresolveType)
         {
             this.Resolve = () =>
             {
-                var toresolveType = typeof(T);
-
                 // get ctor
                 var ctor = toresolveType.GetConstructors().FirstOrDefault();
                 if (ctor == null)
@@ -22,7 +20,7 @@ namespace Bridge.Ioc
                 // get ctor params
                 var ctorParams = ctor.GetParameters();
                 if (!ctorParams.Any())
-                    return (T)Activator.CreateInstance(typeof(T));
+                    return Activator.CreateInstance(toresolveType);
                 else
                 {
                     // recursive resolve
@@ -34,6 +32,15 @@ namespace Bridge.Ioc
                     return ctor.Invoke(parameters.ToArray());
                 }
             };
+        }
+    }
+
+    public class TransientResolver<T> : TransientResolver
+    {
+
+        public TransientResolver(IIoc ioc) : base(ioc, typeof(T))
+        {
+
         }
     }
 

@@ -2,25 +2,33 @@
 
 namespace Bridge.Ioc
 {
-    public class SingleInstanceResolver<T> : IResolver
+    public class SingleInstanceResolver : IResolver
     {
-        private static T _singleInstance;
+        private static object _singleInstance;
 
         public Func<object> Resolve { get; set; }
 
-        public SingleInstanceResolver(IIoc ioc)
+        public SingleInstanceResolver(IIoc ioc, Type type)
         {
-            this.Resolve = () =>
+            Resolve = () =>
             {
                 // first resolve. Using transient resolver
                 if (_singleInstance == null)
                 {
-                    var transientResolver = new TransientResolver<T>(ioc);
-                    _singleInstance = (T)transientResolver.Resolve();
+                    var transientResolver = new TransientResolver(ioc, type);
+                    _singleInstance = transientResolver.Resolve();
                 }
 
                 return _singleInstance;
             };
+        }
+    }
+
+    public class SingleInstanceResolver<T> : SingleInstanceResolver
+    {
+
+        public SingleInstanceResolver(IIoc ioc) : base(ioc, typeof(T))
+        {
         }
 
     }

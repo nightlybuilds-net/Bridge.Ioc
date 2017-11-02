@@ -190,3 +190,6 @@ ModelManifest.xml
 
 Bridge.Ioc.userprefs
 applicationhost.config
+.vs
+Bridge.Ioc/Bridge/output
+Bridge.Ioc.ExampleApp/Bridge/output
