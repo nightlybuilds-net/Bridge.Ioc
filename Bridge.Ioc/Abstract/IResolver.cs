@@ -4,6 +4,6 @@ namespace Bridge.Ioc
 {
     public interface IResolver
     {
-        Func<object> Resolve { get; set; }
+        Func<object> Resolve { get; }
     }
 }
