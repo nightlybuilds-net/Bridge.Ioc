@@ -87,7 +87,7 @@ namespace Bridge.Ioc
 
         public void RegisterInstance<TType>(TType instance)
         {
-            RegisterInstance((object)instance);
+            RegisterInstance(typeof(TType), instance);
         }
         #endregion
 
