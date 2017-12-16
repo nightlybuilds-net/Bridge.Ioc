@@ -1,10 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace Bridge.Ioc
 {
     public class SingleInstanceResolver : IResolver
     {
-        private object _singleInstance;
+        private static Dictionary<Type, object> _singleInstances = new Dictionary<Type, object>();
 
         public Func<object> Resolve { get; private set; }
 
@@ -12,14 +13,15 @@ namespace Bridge.Ioc
         {
             Resolve = () =>
             {
+                object singleInstance;
                 // first resolve. Using transient resolver
-                if (_singleInstance == null)
+                if (!_singleInstances.TryGetValue(type, out singleInstance))
                 {
                     var transientResolver = new TransientResolver(ioc, type);
-                    _singleInstance = transientResolver.Resolve();
+                    singleInstance = transientResolver.Resolve();
+                    _singleInstances.Add(type, singleInstance);
                 }
-
-                return _singleInstance;
+                return singleInstance;
             };
         }
     }
