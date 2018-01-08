@@ -193,3 +193,4 @@ applicationhost.config
 .vs
 Bridge.Ioc/Bridge/output
 Bridge.Ioc.ExampleApp/Bridge/output
+.idea/.idea.Bridge.Ioc/.idea

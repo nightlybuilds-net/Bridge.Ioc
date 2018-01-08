@@ -1,0 +1,173 @@
+@import url('https://fonts.googleapis.com/css?family=Kaushan+Script');
+
+body {
+    font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+}
+
+.spinner-wrapper{
+    width: 100%;
+    height: 100%;
+    background-color: #ffffff;
+    z-index: 1000;
+    position: absolute;
+    padding-top: 75px;
+}
+
+.spinner-text{
+    color: #166796;
+    margin: 10px auto;
+    text-align: center;
+}
+
+.spinner {
+    margin: 5px auto;
+    height: 75px;
+    width: 75px;
+    animation: rotate 0.8s infinite linear;
+    border: 2px solid #166796;
+    border-right-color: transparent;
+    border-radius: 50%;
+    display: block;
+}
+
+@keyframes rotate {
+    0%    { transform: rotate(0deg); }
+    100%  { transform: rotate(360deg); }
+}
+
+a:active,a:hover{
+    color: #166796;
+}
+
+.right{
+    float: right !important;
+}
+
+.w3-padding-top-16{
+    padding-top: 16px;
+}
+
+.w3-padding-top-24{
+    padding-top: 24px;
+}
+
+.w3-padding-top-64{
+    padding-top: 64px;
+}
+
+#titleHeader p{
+    font-family: 'Kaushan Script', cursive;
+    margin: 0px;
+    font-size: 35px;
+}
+
+#userAgent div{
+    max-width: none;
+    background: #BCC9C3;
+    color: #4E5C65;
+    text-align: center;
+    margin-top: 4px;
+    padding: 7px;
+}
+
+.full-width{
+    max-width: none !important;
+}
+
+.w3-custom-blue{
+    background-color: #166796;
+    color: white;
+}
+
+#filters form{
+    padding: 0 15%;
+    background-color: transparent;
+}
+
+#selectFilter{
+    text-align: center;
+    text-align-last: center;
+    padding: 3px;
+}
+
+#selectFilter option{
+    text-align: left;
+}
+
+.overview{
+    width: 65%;
+    margin: 0 auto;
+}
+
+.overview h2{
+    text-align: center;
+}
+
+.testCompleted{
+    width: 65%;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.testsList{
+    width: 65%;
+    margin: 0 auto;
+}
+
+.test-ok{
+    border-left: green solid 10px;
+}
+
+.test-ko{
+    border-left: red solid 10px;
+}
+
+#tableTestsList{
+    table-layout: fixed;
+}
+
+#tableTestsList strong, i{
+    margin-right: 5px;
+}
+
+.whiteRow{
+    background-color: #ffffff;
+}
+
+.greyRow{
+    background-color: #f1f1f1;
+}
+
+#tableTestsList tr:nth-child(4n-3){
+    border-bottom: 1px solid #f1f1f1;
+}
+
+#tableTestsList tr:nth-child(4n-1){
+    border-bottom: 1px solid #ffffff;
+}
+
+.error-message{
+    white-space: unset;
+}
+
+pre{
+    border: solid #fff8dc 1px;
+    padding: 15px;
+    background-color: #fff8dc;
+    border-left: solid #ffeb8e 5px;
+    white-space: unset;
+}
+
+.inner-row{
+    padding-left: 36px !important;
+    padding-right: 36px !important;
+}
+
+footer{
+    /* position: fixed; */
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    text-align: center;
+    margin-top: 50px;
+}
