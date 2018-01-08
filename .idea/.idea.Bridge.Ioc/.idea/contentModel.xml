@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ContentModelStore">
+    <e p="$USER_HOME$/Library/Caches/Rider2017.3/resharper-host/local/Transient/ReSharperHost/v11/SolutionCaches/_Bridge.Ioc.347780969.00" t="ExcludeRecursive" />
+    <e p="$PROJECT_DIR$" t="IncludeFlat">
+      <e p="Bridge.Ioc" t="IncludeRecursive">
+        <e p="Abstract" t="Include">
+          <e p="IIoc.cs" t="Include" />
+          <e p="IResolver.cs" t="Include" />
+        </e>
+        <e p="bin" t="ExcludeRecursive" />
+        <e p="Bridge" t="Include">
+          <e p="bridge.json" t="Include" />
+          <e p="output" t="Include" />
+          <e p="www" t="Include">
+            <e p="demo.html" t="Include" />
+          </e>
+        </e>
+        <e p="Bridge.Ioc.csproj" t="IncludeRecursive" />
+        <e p="bridge.json" t="Include" />
+        <e p="BridgeIoc.cs" t="Include" />
+        <e p="obj" t="ExcludeRecursive" />
+        <e p="packages.config" t="Include" />
+        <e p="Properties" t="Include">
+          <e p="AssemblyInfo.cs" t="Include" />
+        </e>
+        <e p="Resolvers" t="Include">
+          <e p="FuncResolver.cs" t="Include" />
+          <e p="InstanceResolver.cs" t="Include" />
+          <e p="SingleInstanceResolver.cs" t="Include" />
+          <e p="TransientResolver.cs" t="Include" />
+        </e>
+      </e>
+      <e p="Bridge.Ioc.ExampleApp" t="IncludeRecursive">
+        <e p="Abstract" t="Include">
+          <e p="ICalc.cs" t="Include" />
+          <e p="ISubtract.cs" t="Include" />
+          <e p="ISum.cs" t="Include" />
+        </e>
+        <e p="App.cs" t="Include" />
+        <e p="bin" t="ExcludeRecursive" />
+        <e p="Bridge" t="Include">
+          <e p="bridge.json" t="Include" />
+          <e p="output" t="Include" />
+          <e p="www" t="Include">
+            <e p="demo.html" t="Include" />
+          </e>
+        </e>
+        <e p="Bridge.Ioc.ExampleApp.csproj" t="IncludeRecursive" />
+        <e p="bridge.json" t="Include" />
+        <e p="Calculators" t="Include">
+          <e p="Adder.cs" t="Include" />
+          <e p="Calculator.cs" t="Include" />
+          <e p="Subtractor.cs" t="Include" />
+        </e>
+        <e p="obj" t="ExcludeRecursive" />
+        <e p="packages.config" t="Include" />
+        <e p="Properties" t="Include">
+          <e p="AssemblyInfo.cs" t="Include" />
+        </e>
+      </e>
+      <e p="Bridge.Ioc.sln" t="IncludeFlat" />
+      <e p="Bridge.Ioc.Test" t="IncludeRecursive">
+        <e p="bin" t="ExcludeRecursive" />
+        <e p="Bridge.Ioc.Test.csproj" t="IncludeRecursive" />
+        <e p="bridge.json" t="Include" />
+        <e p="Classes" t="Include">
+          <e p="Impl" t="Include">
+            <e p="TheTest.cs" t="Include" />
+          </e>
+          <e p="ITest.cs" t="Include" />
+        </e>
+        <e p="obj" t="ExcludeRecursive" />
+        <e p="packages.config" t="Include" />
+        <e p="SingleInstance.cs" t="Include" />
+        <e p="TransientInstance.cs" t="Include" />
+        <e p="wwwroot" t="Include">
+          <e p="Bridge" t="Include">
+            <e p="bridge.console.js" t="Include" />
+            <e p="Bridge.EasyTests.js" t="Include" />
+            <e p="Bridge.EasyTests.meta.js" t="Include" />
+            <e p="bridge.ioc.js" t="Include" />
+            <e p="bridge.ioc.meta.js" t="Include" />
+            <e p="bridge.ioc.meta.min.js" t="Include" />
+            <e p="bridge.ioc.min.js" t="Include" />
+            <e p="Bridge.Ioc.Test.js" t="Include" />
+            <e p="Bridge.Ioc.Test.meta.js" t="Include" />
+            <e p="bridge.js" t="Include" />
+            <e p="bridge.meta.js" t="Include" />
+            <e p="index.html" t="Include" />
+            <e p="index.min.html" t="Include" />
+          </e>
+          <e p="css" t="Include">
+            <e p="style.css" t="Include" />
+            <e p="w3.css" t="Include" />
+          </e>
+          <e p="index.html" t="Include" />
+          <e p="Scripts" t="Include">
+            <e p="knockoutjs.js" t="Include" />
+          </e>
+        </e>
+      </e>
+      <e p="Example" t="Include" />
+      <e p="packages" t="ExcludeRecursive" />
+    </e>
+  </component>
+</project>
