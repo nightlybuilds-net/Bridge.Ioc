@@ -11,150 +11,145 @@
 <body>
 <div class="spinner-wrapper" data-bind="css: {'w3-hide': Running() == false}">
     <div class="spinner"></div>
-    <div class="spinner-text">Loading...</div>
+    <div class="spinner-text">Running...</div>
 </div>
-    <!-- Navbar (sit on top) -->
-    <div class="w3-top">
-        <div class="w3-bar w3-custom-blue w3-card" id="titleHeader">
-            <p class="w3-bar-item w3-center" style="width:100%">Bridge.EasyTest</p>
-        </div>
+<!-- Navbar (sit on top) -->
+<div class="w3-top">
+    <div class="w3-bar w3-custom-blue w3-card" id="titleHeader">
+        <p class="w3-bar-item w3-center" style="width:100%">Bridge.EasyTest</p>
+    </div>
+</div>
+
+<!-- Page content -->
+<div class="w3-content full-width">
+
+    <div class="w3-row w3-padding-top-64" id="userAgent">
+        <div data-bind="text:BrowserInfo"></div>
     </div>
 
-    <!-- Page content -->
-    <div class="w3-content full-width">
-
-        <div class="w3-row w3-padding-top-64" id="userAgent">
-            <div data-bind="text:BrowserInfo"></div>
-        </div>
-
-        <!-- Filters -->
-        <div class="w3-row w3-light-grey" id="filters">
-            <form class="w3-container w3-card-4">
-                <div class="w3-row-padding">
-                    <div class="w3-half w3-center">
-                        <p>
-                            <input class="w3-check" type="checkbox" id="hidePassedTests" data-bind="checked:HidePassed">
-                            <label for="hidePassedTests">Hide passed tests</label>
-                        </p>
-                    </div> 
-                    <div class="w3-center">
-                        <!--<p>-->
-                            <!--<label>Seleziona gruppo da visualizzare </label>-->
-                            <!--<select id="selectFilter">-->
-                                <!--<option>Tutti</option>&ndash;&gt;-->
-                                <!--<option>Gruppo di test 1</option>&ndash;&gt;-->
-                                <!--<option>Gruppo di test 2</option>&ndash;&gt;-->
-                            <!--</select>-->
-                        <!--</p>-->
-                    </div>
+    <!-- Filters -->
+    <div class="w3-row w3-light-grey" id="filters">
+        <form class="w3-container w3-card-4">
+            <div class="w3-row-padding">
+                <div class="w3-center">
+                    <p>
+                        <input class="w3-check" type="checkbox" id="hidePassedTests" data-bind="checked:HidePassed">
+                        <label for="hidePassedTests">Hide passed tests</label>
+                    </p>
                 </div>
-            </form>
-        </div>
 
-        <!-- Overview -->
-        <div class="w3-row w3-padding-top-24">
-            <div class="w3-col m12">
-                <div class="overview">
-                    <div class="w3-card w3-padding">
-                        <div class="w3-row">
-                            <div class="w3-third w3-container">
-                                <h2>
-                                    <i class="fa fa-flask"></i>
-                                    <!--ko text: TotalTests-->
-                                    <!--/ko--> tests</h2>
-                            </div>
-                            <div class="w3-third w3-container">
-                                <h2>
-                                    <i class="fa fa-check w3-text-green"></i>
-                                    <!--ko text: PassedTests-->
-                                    <!--/ko--> passed</h2>
-                            </div>
-                            <div class="w3-third w3-container">
-                                <h2>
-                                    <i class="fa fa-close w3-text-red"></i>
-                                    <!--ko text: FailedTests-->
-                                    <!--/ko--> failed</h2>
-                            </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Overview -->
+    <div class="w3-row w3-padding-top-24">
+        <div class="w3-col m12">
+            <div class="overview">
+                <div class="w3-card w3-padding">
+                    <div class="w3-row">
+                        <div class="w3-third w3-container">
+                            <h2>
+                                <i class="fa fa-flask"></i>
+                                <!--ko text: TotalTests-->
+                                <!--/ko--> tests</h2>
+                        </div>
+                        <div class="w3-third w3-container">
+                            <h2>
+                                <i class="fa fa-check w3-text-green"></i>
+                                <!--ko text: PassedTests-->
+                                <!--/ko--> passed</h2>
+                        </div>
+                        <div class="w3-third w3-container">
+                            <h2>
+                                <i class="fa fa-close w3-text-red"></i>
+                                <!--ko text: FailedTests-->
+                                <!--/ko--> failed</h2>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-
-        <!-- Tests time result -->
-        <div class="w3-row w3-padding-top-16">
-            <div class="testCompleted">
-                <div class="w3-card w3-padding">
-                    Test completed in
-                    <!--ko text: TotalTime-->
-                    <!--/ko--> ms
-                </div>
-            </div>
-        </div>
-
-        <!-- List of tests -->
-        <div class="w3-row w3-padding-top-24 testsList">
-            <table class="w3-table w3-bordered w3-border" id="tableTestsList" data-bind="foreach: Tests">
-                <tr class="test-ko" data-bind="visible:Visible">
-                    <td data-bind="css : {'test-ok':Success, 'test-ko': Success == false}">
-                        <strong data-bind="text: ($index() + 1)"></strong>
-                        <!--ko text: Name-->
-                        <!--/ko-->
-                    </td>
-                    <td>
-                        <i class="fa fa-clock-o"></i>
-                        <!--ko text: Time-->
-                        <!--/ko--> ms
-                    </td>
-                    <td>
-                        <i class="fa fa-files-o"></i>
-                        <!--ko text: Group-->
-                        <!--/ko-->
-                    </td>
-                </tr>
-                <tr data-bind="if: Success == false, visible:Visible" >
-                    <td colspan="3" class="test-ko inner-row">
-                        <p class="error-message" >
-                            <i class="w3-text-grey" data-bind="text: Error"></i>
-                        </p>
-                        <pre data-bind="text: Stack">
-                          
-                        </pre>
-                    </td>
-                </tr>
-
-               
-            </table>
-        </div>
-
-        <!-- End page content -->
     </div>
 
-    <!-- Footer -->
-    <footer class="w3-center w3-light-grey w3-padding-16">
-        <p>Powered by
-            <a href="#" title="" target="_blank" class="">Bridge.EasyTest</a>
-        </p>
-    </footer>
+    <!-- Tests time result -->
+    <div class="w3-row w3-padding-top-16">
+        <div class="testCompleted">
+            <div class="w3-card w3-padding">
+                Test completed in
+                <!--ko text: TotalTime-->
+                <!--/ko--> ms
+            </div>
+        </div>
+    </div>
+
+    <!-- List of tests -->
+    <div class="w3-row w3-padding-top-24 testsList">
+        <table class="w3-table w3-bordered w3-border" id="tableTestsList" data-bind="foreach: Tests">
+            <tr class="test-ko" data-bind="visible:Visible, css:{whiteRow: $index()%2==0,greyRow: $index()%2!=0 }">
+                <td data-bind="css : {'test-ok':Success, 'test-ko': Success == false}">
+                    <strong data-bind="text: ($index() + 1)"></strong>
+                    <!--ko text: Name--><!--/ko-->
+                    <i class="w3-text-grey" data-bind="text: NameDescription"></i>
+                </td>
+
+                <td>
+                    <i class="fa fa-object-group"></i>
+                    <!--ko text: Group--><!--/ko-->
+                    <i class="w3-text-grey" data-bind="text: GroupDescription"></i>
+                </td>
+
+                <td class="w3-right">
+
+                    <i class="fa fa-clock-o"></i>
+                    <!--ko text: Time-->
+                    <!--/ko--> ms
+                </td>
+            </tr>
+            <tr data-bind="if: Success == false, visible:Visible, css:{whiteRow: $index()%2==0,greyRow: $index()%2!=0 }" >
+                <td colspan="3" class="test-ko inner-row">
+                    <p class="error-message" >
+                        <i class="w3-text-grey" data-bind="text: Error"></i>
+                    </p>
+                    <pre data-bind="text: Stack">
+                          
+                        </pre>
+                </td>
+            </tr>
 
 
-    <script src="Scripts/knockoutjs.js"></script>
+        </table>
+    </div>
 
-    <script src="bridge/bridge.js"></script>
-    <script src="bridge/bridge.console.js"></script>
-    <script src="bridge/bridge.meta.js"></script>
+    <!-- End page content -->
+</div>
 
-    <script src="bridge/bridge.ioc.js"></script>
-    <script src="bridge/bridge.ioc.meta.js"></script>
+<!-- Footer -->
+<footer class="w3-center w3-light-grey w3-padding-16">
+    <p>Powered by
+        <a href="https://github.com/markjackmilian/Bridge.EasyTests" title="" target="_blank" class="">Bridge.EasyTest</a>
+    </p>
+</footer>
 
-    <script src="bridge/Bridge.EasyTests.js"></script>
-    <script src="bridge/Bridge.EasyTests.meta.js"></script>
 
-    <script src="bridge/Bridge.Ioc.Test.js"></script>
-    <script src="bridge/Bridge.Ioc.Test.meta.js"></script>
+<script src="Scripts/knockoutjs.js"></script>
 
+<script src="bridge/bridge.js"></script>
+<script src="bridge/bridge.console.js"></script>
+<script src="bridge/bridge.meta.js"></script>
+
+<script src="bridge/bridge.ioc.js"></script>
+<script src="bridge/bridge.ioc.meta.js"></script>
+
+<script src="bridge/Bridge.EasyTests.js"></script>
+<script src="bridge/Bridge.EasyTests.meta.js"></script>
+
+<script src="bridge/Bridge.Ioc.Test.js"></script>
+<script src="bridge/Bridge.Ioc.Test.meta.js"></script>
 
 
 </body>
 
 </html>
+
+

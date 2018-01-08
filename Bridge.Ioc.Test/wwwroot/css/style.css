@@ -9,7 +9,7 @@ body {
     height: 100%;
     background-color: #ffffff;
     z-index: 1000;
-    position: absolute; 
+    position: absolute;
     padding-top: 75px;
 }
 
@@ -28,12 +28,12 @@ body {
     border-right-color: transparent;
     border-radius: 50%;
     display: block;
-  }
-  
-  @keyframes rotate {
+}
+
+@keyframes rotate {
     0%    { transform: rotate(0deg); }
     100%  { transform: rotate(360deg); }
-  }
+}
 
 a:active,a:hover{
     color: #166796;
@@ -92,7 +92,7 @@ a:active,a:hover{
 
 #selectFilter option{
     text-align: left;
-} 
+}
 
 .overview{
     width: 65%;
@@ -103,7 +103,7 @@ a:active,a:hover{
     text-align: center;
 }
 
-.testCompleted{    
+.testCompleted{
     width: 65%;
     margin: 0 auto;
     text-align: center;
@@ -123,18 +123,18 @@ a:active,a:hover{
 }
 
 #tableTestsList{
-    table-layout: fixed;    
+    table-layout: fixed;
 }
 
 #tableTestsList strong, i{
     margin-right: 5px;
 }
 
-#tableTestsList tr:nth-child(4n), tr:nth-child(4n-1){
+.whiteRow{
     background-color: #ffffff;
 }
 
-#tableTestsList tr:nth-child(4n-3), tr:nth-child(4n-2){
+.greyRow{
     background-color: #f1f1f1;
 }
 

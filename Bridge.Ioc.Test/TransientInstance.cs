@@ -5,7 +5,7 @@ using Bridge.Ioc.Test.Classes.Impl;
 
 namespace Bridge.Ioc.Test
 {
-    [Test]
+    [Test("Transient Resolving")]
     public class TransientInstance
     {
         [TestMethod()]
