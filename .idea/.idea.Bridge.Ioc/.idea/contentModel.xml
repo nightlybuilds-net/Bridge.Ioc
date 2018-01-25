@@ -95,9 +95,6 @@
             <e p="w3.css" t="Include" />
           </e>
           <e p="index.html" t="Include" />
-          <e p="Scripts" t="Include">
-            <e p="knockoutjs.js" t="Include" />
-          </e>
         </e>
       </e>
       <e p="Example" t="Include" />

@@ -36,7 +36,7 @@
       <HintPath>..\packages\Bridge.Core.16.6.0\lib\net40\Bridge.dll</HintPath>
     </Reference>
     <Reference Include="Bridge.EasyTests, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null">
-      <HintPath>..\packages\Bridge.EasyTest.0.0.3\lib\net45\Bridge.EasyTests.dll</HintPath>
+      <HintPath>..\packages\Bridge.EasyTest.0.0.4\lib\net45\Bridge.EasyTests.dll</HintPath>
     </Reference>
     <Reference Include="Bridge.Html5, Version=16.6.0.0, Culture=neutral, PublicKeyToken=null">
       <HintPath>..\packages\Bridge.Html5.16.6.0\lib\net40\Bridge.Html5.dll</HintPath>
@@ -63,7 +63,6 @@
     <None Include="wwwroot\css\style.css" />
     <None Include="wwwroot\css\w3.css" />
     <None Include="wwwroot\index.html" />
-    <None Include="wwwroot\Scripts\knockoutjs.js" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Classes\Impl\TheTest.cs" />

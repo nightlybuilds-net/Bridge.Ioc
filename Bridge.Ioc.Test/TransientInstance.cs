@@ -8,7 +8,7 @@ namespace Bridge.Ioc.Test
     [Test("Transient Resolving")]
     public class TransientInstance
     {
-        [TestMethod()]
+        [TestMethod("Register<ITest,TheTest>()")]
         public void GenericInterface()
         {
             var container = new BridgeIoc();
@@ -22,7 +22,7 @@ namespace Bridge.Ioc.Test
             first.Id.ShouldBeNotEquals(second.Id);
         }
         
-        [TestMethod()]
+        [TestMethod("Register(typeof(ITest),typeof(TheTest))")]
         public void NonGenericInterface()
         {
             var container = new BridgeIoc();
@@ -36,7 +36,7 @@ namespace Bridge.Ioc.Test
             first.Id.ShouldBeNotEquals(second.Id);
         }
         
-        [TestMethod()]
+        [TestMethod("Register<TheTest>()")]
         public void GenericClass()
         {
             var container = new BridgeIoc();
@@ -51,7 +51,7 @@ namespace Bridge.Ioc.Test
             
         }
         
-        [TestMethod()]
+        [TestMethod("Register(typeof(TheTest))")]
         public void NonGenericClass()
         {
             var container = new BridgeIoc();
@@ -65,7 +65,7 @@ namespace Bridge.Ioc.Test
             first.Id.ShouldBeNotEquals(second.Id);
         }
         
-        [TestMethod()]
+        [TestMethod("RegisterFunc(()=> new TheTest())")]
         public void FuncResolve()
         {
             var container = new BridgeIoc();
