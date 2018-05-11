@@ -1,7 +1,7 @@
 /**
  * @version 1.0.0.0
  * @copyright Copyright ©  2017
- * @compiler Bridge.NET 16.5.0
+ * @compiler Bridge.NET 17.0.0
  */
 Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
     "use strict";
@@ -224,10 +224,10 @@ Bridge.assembly("Bridge.Ioc", function ($asm, globals) {
                             }
                         } finally {
                             if (Bridge.is($t, System.IDisposable)) {
-                                $t.System$IDisposable$dispose();
+                                $t.System$IDisposable$Dispose();
                             }
                         }
-                        return Bridge.Reflection.invokeCI($ctor, Bridge.unbox(parameters.toArray()));
+                        return Bridge.Reflection.invokeCI($ctor, Bridge.unbox(parameters.ToArray()));
                     }
                 };
             }

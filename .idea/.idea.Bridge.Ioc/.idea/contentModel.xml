@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ContentModelStore">
-    <e p="$USER_HOME$/Library/Caches/Rider2017.3/resharper-host/local/Transient/ReSharperHost/v11/SolutionCaches/_Bridge.Ioc.347780969.00" t="ExcludeRecursive" />
+    <e p="$USER_HOME$/Library/Caches/Rider2018.1/resharper-host/local/Transient/ReSharperHost/v12/SolutionCaches/_Bridge.Ioc.347780969.00" t="ExcludeRecursive" />
     <e p="$PROJECT_DIR$" t="IncludeFlat">
       <e p="Bridge.Ioc" t="IncludeRecursive">
         <e p="Abstract" t="Include">
@@ -95,9 +95,6 @@
             <e p="w3.css" t="Include" />
           </e>
           <e p="index.html" t="Include" />
-          <e p="Scripts" t="Include">
-            <e p="knockoutjs.js" t="Include" />
-          </e>
         </e>
       </e>
       <e p="Example" t="Include" />

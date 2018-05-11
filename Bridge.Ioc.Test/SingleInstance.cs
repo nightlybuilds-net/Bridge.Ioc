@@ -8,7 +8,7 @@ namespace Bridge.Ioc.Test
     [Test("Single Instance Resolving")]
     public class SingleInstance
     {
-        [TestMethod()]
+        [TestMethod("RegisterSingleInstance<ITest,TheTest>()")]
         public void GenericInterface()
         {
             var container = new BridgeIoc();
@@ -22,7 +22,7 @@ namespace Bridge.Ioc.Test
             first.Id.ShouldBeEquals(second.Id);
         }
         
-        [TestMethod()]
+        [TestMethod("RegisterSingleInstance(typeof(ITest),typeof(TheTest))")]
         public void NonGenericInterface()
         {
             var container = new BridgeIoc();
@@ -36,7 +36,7 @@ namespace Bridge.Ioc.Test
             first.Id.ShouldBeEquals(second.Id);
         }
         
-        [TestMethod()]
+        [TestMethod("container.RegisterSingleInstance<TheTest>()")]
         public void GenericClass()
         {
             var container = new BridgeIoc();
@@ -51,7 +51,7 @@ namespace Bridge.Ioc.Test
             
         }
         
-        [TestMethod()]
+        [TestMethod("container.RegisterSingleInstance(typeof(TheTest))")]
         public void NonGenericClass()
         {
             var container = new BridgeIoc();
@@ -65,7 +65,7 @@ namespace Bridge.Ioc.Test
             first.Id.ShouldBeEquals(second.Id);
         }
         
-        [TestMethod()]
+        [TestMethod("RegisterInstance(new TheTest())")]
         public void InstanceResolve()
         {
             var container = new BridgeIoc();
@@ -79,7 +79,7 @@ namespace Bridge.Ioc.Test
             first.Id.ShouldBeEquals(second.Id);
         }
         
-        [TestMethod()]
+        [TestMethod("RegisterFunc(()=> theTest)")]
         public void FuncResolve()
         {
             var container = new BridgeIoc();
