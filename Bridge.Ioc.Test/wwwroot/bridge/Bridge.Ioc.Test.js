@@ -1,5 +1,5 @@
 /**
- * @compiler Bridge.NET 16.6.0
+ * @compiler Bridge.NET 17.0.0
  */
 Bridge.assembly("Bridge.Ioc.Test", function ($asm, globals) {
     "use strict";
@@ -142,7 +142,7 @@ Bridge.assembly("Bridge.Ioc.Test", function ($asm, globals) {
         ctors: {
             init: function () {
                 this.Id = new System.Guid();
-                this.Id = System.Guid.newGuid();
+                this.Id = System.Guid.NewGuid();
             }
         }
     });
