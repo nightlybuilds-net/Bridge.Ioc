@@ -3,6 +3,8 @@
 # Add steps that publish symbols, save build artifacts, and more:
 # https://docs.microsoft.com/azure/devops/pipelines/apps/windows/dot-net
 
+name: $(Year:yyyy).$(Month).$(DayOfMonth)$(Rev:.r)
+
 trigger:
 - develop
 
@@ -14,7 +16,9 @@ variables:
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
 
+  
 steps:
+
 - task: NuGetToolInstaller@1
 
 - task: NuGetCommand@2
@@ -27,4 +31,14 @@ steps:
     platform: '$(buildPlatform)'
     configuration: '$(buildConfiguration)'
 
+- task: NuGetCommand@2
+  inputs:
+    command: 'pack'
+    packagesToPack: 'Bridge.Ioc/Bridge.Ioc.Sources.nuspec'
+    versioningScheme: 'byBuildNumber'
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop-ioc'
 
