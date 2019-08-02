@@ -34,7 +34,7 @@ steps:
 - task: NuGetCommand@2
   inputs:
     command: 'pack'
-    packagesToPack: 'Bridge.Ioc/Bridge.Ioc.Sources.nuspec'
+    packagesToPack: 'Bridge.Ioc.Sources.nuspec'
     versioningScheme: 'byBuildNumber'
 
 - task: PublishBuildArtifacts@1
