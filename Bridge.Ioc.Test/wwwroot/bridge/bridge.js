@@ -1,5 +1,5 @@
 /**
- * @version   : 17.0.0 - Bridge.NET
+ * @version   : 17.2.0 - Bridge.NET
  * @author    : Object.NET, Inc. http://bridge.net/
  * @copyright : Copyright 2008-2018 Object.NET, Inc. http://object.net/
  * @license   : See license.txt and https://github.com/bridgedotnet/Bridge/blob/master/LICENSE.md
@@ -121,8 +121,36 @@
         },
 
         unbox: function (o, noclone) {
+            var T;
+
+            if (noclone && Bridge.isFunction(noclone)) {
+                T = noclone;
+                noclone = false;
+            }
+
             if (o && o.$boxed) {
-                var v = o.v;
+                var v = o.v,
+                    t = o.type;
+
+                if (T && T.$nullable) {
+                    T = T.$nullableType;
+                }
+
+                if (T && T.$kind === "enum") {
+                    T = System.Enum.getUnderlyingType(T);
+                }
+
+                if (t.$nullable) {
+                    t = t.$nullableType;
+                }
+
+                if (t.$kind === "enum") {
+                    t = System.Enum.getUnderlyingType(t);
+                }
+
+                if (T && T !== t && !Bridge.isObject(T)) { 
+                    throw new System.InvalidCastException.$ctor1("Specified cast is not valid.");
+                }
 
                 if (!noclone && v && v.$clone) {
                     v = v.$clone();
@@ -446,9 +474,24 @@
                 return type.ctor();
             } else if (args && args.length > 0) {
                 return Bridge.Reflection.applyConstructor(type, args);
-            } else {
-                return new type();
+            } 
+
+            var ctors = Bridge.Reflection.getMembers(type, 1, 54);
+
+            if (ctors.length > 0) {
+                ctors = ctors.filter(function (c) { return !c.isSynthetic; });
+
+                for (var idx = 0; idx < ctors.length; idx++) {
+                    var c = ctors[idx],
+                        isDefault = (c.pi || []).length === 0;
+
+                    if (isDefault) {
+                        return Bridge.Reflection.invokeCI(c, []);
+                    }
+                }
             }
+
+            return new type();
         },
 
         clone: function (obj) {
@@ -1247,6 +1290,18 @@
         },
 
         unroll: function (value, scope) {
+            if (Bridge.isArray(value)) {
+                for (var i = 0; i < value.length; i++) {
+                    var v = value[i];
+
+                    if (Bridge.isString(v)) {
+                        value[i] = Bridge.unroll(v, scope);
+                    }
+                }
+
+                return;
+            }
+
             var d = value.split("."),
                 o = (scope || Bridge.global)[d[0]],
                 i = 1;
@@ -1570,7 +1625,7 @@
                 throw new System.NullReferenceException.$ctor1("instance is null");
             }
 
-            if (T) {
+            if (T) {               
                 var type = Bridge.getType(instance);
                 return Bridge.Reflection.isAssignableFrom(T, type) ? type : T;
             }
@@ -1869,6 +1924,7 @@
             combine: function (fn1, fn2) {
                 if (!fn1 || !fn2) {
                     var fn = fn1 || fn2;
+
                     return fn ? Bridge.fn.$build([fn]) : fn;
                 }
 
@@ -2003,30 +2059,35 @@
 
             var id = Math.random();
 
-            function onmessage(e) {
+            function onmessage (e) {
                 if (e.data != id) {
                     return;
                 }
+
                 head = head.next;
                 var func = head.func;
                 delete head.func;
                 func();
             }
 
-            if (window.addEventListener) {
-                window.addEventListener('message', onmessage);
-            } else {
-                window.attachEvent('onmessage', onmessage);
+            if (typeof window !== "undefined") {
+                if (window.addEventListener) {
+                    window.addEventListener("message", onmessage);
+                } else {
+                    window.attachEvent("onmessage", onmessage);
+                }
             }
 
             return function (func) {
                 tail = tail.next = { func: func };
-                window.postMessage(id, "*");
+
+                if (typeof window !== "undefined") {
+                    window.postMessage(id, "*");
+                }
             };
         }());
-    }
-    else {
-        core.setImmediate = globals.setImmediate;
+    } else {
+        core.setImmediate = globals.setImmediate.bind(globals);
     }
 
     globals.Bridge = core;
@@ -3210,7 +3271,7 @@
                     for (var i = 0; i < len; i++) {
                         var item = metas[i];
 
-                        Bridge.setMetadata(item.typeName, item.metadata);
+                        Bridge.setMetadata(item.typeName, item.metadata, item.ns);
                     }
                 }
             }
@@ -3242,7 +3303,15 @@
                 if (t.prototype.$main) {
                     (function (cls, name) {
                         Bridge.ready(function () {
-                             cls[name]();
+                            var task = cls[name]();
+
+                            if (task && task.continueWith) {
+                                task.continueWith(function () {
+                                    setTimeout(function () {
+                                        task.getAwaitedResult();
+                                    }, 0);                                    
+                                });
+                            }
                         });
                     })(t, t.prototype.$main.name || "Main");
 
@@ -3387,8 +3456,8 @@
     // @source SystemAssemblyVersion.js
 
     Bridge.init(function () {
-        Bridge.SystemAssembly.version = "17.0.0";
-        Bridge.SystemAssembly.compiler = "17.0.0";
+        Bridge.SystemAssembly.version = "17.2.0";
+        Bridge.SystemAssembly.compiler = "17.2.0";
     });
 
     Bridge.define("Bridge.Utils.SystemAssemblyVersion");
@@ -3398,17 +3467,18 @@
     Bridge.Reflection = {
         deferredMeta: [],
 
-        setMetadata: function (type, metadata) {
+        setMetadata: function (type, metadata, ns) {
             if (Bridge.isString(type)) {
                 var typeName = type;
                 type = Bridge.unroll(typeName);
 
                 if (type == null) {
-                    Bridge.Reflection.deferredMeta.push({ typeName: typeName, metadata: metadata });
+                    Bridge.Reflection.deferredMeta.push({ typeName: typeName, metadata: metadata, ns: ns });
                     return;
                 }
             }
 
+            ns = Bridge.unroll(ns);
             type.$getMetadata = Bridge.Reflection.getMetadata;
             type.$metadata = metadata;
         },
@@ -5345,6 +5415,14 @@
                 },
                 set: function (value) {
                     this.setter(value);
+                }
+            },
+            v: {
+                get: function () {
+                    return this.Value;
+                },
+                set: function (value) {
+                    this.Value = value;
                 }
             }
         },
@@ -8525,7 +8603,7 @@
     // @source Decimal.js
 
     /* decimal.js v7.1.0 https://github.com/MikeMcl/decimal.js/LICENCE */
-    !function (n) { "use strict"; function e(n) { var e, i, t, r = n.length - 1, s = "", o = n[0]; if (r > 0) { for (s += o, e = 1; r > e; e++) t = n[e] + "", i = Rn - t.length, i && (s += l(i)), s += t; o = n[e], t = o + "", i = Rn - t.length, i && (s += l(i)) } else if (0 === o) return "0"; for (; o % 10 === 0;) o /= 10; return s + o } function i(n, e, i) { if (n !== ~~n || e > n || n > i) throw Error(En + n) } function t(n, e, i, t) { var r, s, o, u; for (s = n[0]; s >= 10; s /= 10)--e; return --e < 0 ? (e += Rn, r = 0) : (r = Math.ceil((e + 1) / Rn), e %= Rn), s = On(10, Rn - e), u = n[r] % s | 0, null == t ? 3 > e ? (0 == e ? u = u / 100 | 0 : 1 == e && (u = u / 10 | 0), o = 4 > i && 99999 == u || i > 3 && 49999 == u || 5e4 == u || 0 == u) : o = (4 > i && u + 1 == s || i > 3 && u + 1 == s / 2) && (n[r + 1] / s / 100 | 0) == On(10, e - 2) - 1 || (u == s / 2 || 0 == u) && 0 == (n[r + 1] / s / 100 | 0) : 4 > e ? (0 == e ? u = u / 1e3 | 0 : 1 == e ? u = u / 100 | 0 : 2 == e && (u = u / 10 | 0), o = (t || 4 > i) && 9999 == u || !t && i > 3 && 4999 == u) : o = ((t || 4 > i) && u + 1 == s || !t && i > 3 && u + 1 == s / 2) && (n[r + 1] / s / 1e3 | 0) == On(10, e - 3) - 1, o } function r(n, e, i) { for (var t, r, s = [0], o = 0, u = n.length; u > o;) { for (r = s.length; r--;) s[r] *= e; for (s[0] += wn.indexOf(n.charAt(o++)), t = 0; t < s.length; t++) s[t] > i - 1 && (void 0 === s[t + 1] && (s[t + 1] = 0), s[t + 1] += s[t] / i | 0, s[t] %= i) } return s.reverse() } function s(n, e) { var i, t, r = e.d.length; 32 > r ? (i = Math.ceil(r / 3), t = Math.pow(4, -i).toString()) : (i = 16, t = "2.3283064365386962890625e-10"), n.precision += i, e = E(n, 1, e.times(t), new n(1)); for (var s = i; s--;) { var o = e.times(e); e = o.times(o).minus(o).times(8).plus(1) } return n.precision -= i, e } function o(n, e, i, t) { var r, s, o, u, c, f, a, h, l, d = n.constructor; n: if (null != e) { if (h = n.d, !h) return n; for (r = 1, u = h[0]; u >= 10; u /= 10) r++; if (s = e - r, 0 > s) s += Rn, o = e, a = h[l = 0], c = a / On(10, r - o - 1) % 10 | 0; else if (l = Math.ceil((s + 1) / Rn), u = h.length, l >= u) { if (!t) break n; for (; u++ <= l;) h.push(0); a = c = 0, r = 1, s %= Rn, o = s - Rn + 1 } else { for (a = u = h[l], r = 1; u >= 10; u /= 10) r++; s %= Rn, o = s - Rn + r, c = 0 > o ? 0 : a / On(10, r - o - 1) % 10 | 0 } if (t = t || 0 > e || void 0 !== h[l + 1] || (0 > o ? a : a % On(10, r - o - 1)), f = 4 > i ? (c || t) && (0 == i || i == (n.s < 0 ? 3 : 2)) : c > 5 || 5 == c && (4 == i || t || 6 == i && (s > 0 ? o > 0 ? a / On(10, r - o) : 0 : h[l - 1]) % 10 & 1 || i == (n.s < 0 ? 8 : 7)), 1 > e || !h[0]) return h.length = 0, f ? (e -= n.e + 1, h[0] = On(10, (Rn - e % Rn) % Rn), n.e = -e || 0) : h[0] = n.e = 0, n; if (0 == s ? (h.length = l, u = 1, l--) : (h.length = l + 1, u = On(10, Rn - s), h[l] = o > 0 ? (a / On(10, r - o) % On(10, o) | 0) * u : 0), f) for (; ;) { if (0 == l) { for (s = 1, o = h[0]; o >= 10; o /= 10) s++; for (o = h[0] += u, u = 1; o >= 10; o /= 10) u++; s != u && (n.e++, h[0] == Pn && (h[0] = 1)); break } if (h[l] += u, h[l] != Pn) break; h[l--] = 0, u = 1 } for (s = h.length; 0 === h[--s];) h.pop() } return bn && (n.e > d.maxE ? (n.d = null, n.e = NaN) : n.e < d.minE && (n.e = 0, n.d = [0])), n } function u(n, i, t) { if (!n.isFinite()) return v(n); var r, s = n.e, o = e(n.d), u = o.length; return i ? (t && (r = t - u) > 0 ? o = o.charAt(0) + "." + o.slice(1) + l(r) : u > 1 && (o = o.charAt(0) + "." + o.slice(1)), o = o + (n.e < 0 ? "e" : "e+") + n.e) : 0 > s ? (o = "0." + l(-s - 1) + o, t && (r = t - u) > 0 && (o += l(r))) : s >= u ? (o += l(s + 1 - u), t && (r = t - s - 1) > 0 && (o = o + "." + l(r))) : ((r = s + 1) < u && (o = o.slice(0, r) + "." + o.slice(r)), t && (r = t - u) > 0 && (s + 1 === u && (o += "."), o += l(r))), o } function c(n, e) { for (var i = 1, t = n[0]; t >= 10; t /= 10) i++; return i + e * Rn - 1 } function f(n, e, i) { if (e > Un) throw bn = !0, i && (n.precision = i), Error(Mn); return o(new n(mn), e, 1, !0) } function a(n, e, i) { if (e > _n) throw Error(Mn); return o(new n(vn), e, i, !0) } function h(n) { var e = n.length - 1, i = e * Rn + 1; if (e = n[e]) { for (; e % 10 == 0; e /= 10) i--; for (e = n[0]; e >= 10; e /= 10) i++ } return i } function l(n) { for (var e = ""; n--;) e += "0"; return e } function d(n, e, i, t) { var r, s = new n(1), o = Math.ceil(t / Rn + 4); for (bn = !1; ;) { if (i % 2 && (s = s.times(e), q(s.d, o) && (r = !0)), i = qn(i / 2), 0 === i) { i = s.d.length - 1, r && 0 === s.d[i] && ++s.d[i]; break } e = e.times(e), q(e.d, o) } return bn = !0, s } function p(n) { return 1 & n.d[n.d.length - 1] } function g(n, e, i) { for (var t, r = new n(e[0]), s = 0; ++s < e.length;) { if (t = new n(e[s]), !t.s) { r = t; break } r[i](t) && (r = t) } return r } function w(n, i) { var r, s, u, c, f, a, h, l = 0, d = 0, p = 0, g = n.constructor, w = g.rounding, m = g.precision; if (!n.d || !n.d[0] || n.e > 17) return new g(n.d ? n.d[0] ? n.s < 0 ? 0 : 1 / 0 : 1 : n.s ? n.s < 0 ? 0 : n : NaN); for (null == i ? (bn = !1, h = m) : h = i, a = new g(.03125) ; n.e > -2;) n = n.times(a), p += 5; for (s = Math.log(On(2, p)) / Math.LN10 * 2 + 5 | 0, h += s, r = c = f = new g(1), g.precision = h; ;) { if (c = o(c.times(n), h, 1), r = r.times(++d), a = f.plus(Sn(c, r, h, 1)), e(a.d).slice(0, h) === e(f.d).slice(0, h)) { for (u = p; u--;) f = o(f.times(f), h, 1); if (null != i) return g.precision = m, f; if (!(3 > l && t(f.d, h - s, w, l))) return o(f, g.precision = m, w, bn = !0); g.precision = h += 10, r = c = a = new g(1), d = 0, l++ } f = a } } function m(n, i) { var r, s, u, c, a, h, l, d, p, g, w, v = 1, N = 10, b = n, x = b.d, E = b.constructor, M = E.rounding, y = E.precision; if (b.s < 0 || !x || !x[0] || !b.e && 1 == x[0] && 1 == x.length) return new E(x && !x[0] ? -1 / 0 : 1 != b.s ? NaN : x ? 0 : b); if (null == i ? (bn = !1, p = y) : p = i, E.precision = p += N, r = e(x), s = r.charAt(0), !(Math.abs(c = b.e) < 15e14)) return d = f(E, p + 2, y).times(c + ""), b = m(new E(s + "." + r.slice(1)), p - N).plus(d), E.precision = y, null == i ? o(b, y, M, bn = !0) : b; for (; 7 > s && 1 != s || 1 == s && r.charAt(1) > 3;) b = b.times(n), r = e(b.d), s = r.charAt(0), v++; for (c = b.e, s > 1 ? (b = new E("0." + r), c++) : b = new E(s + "." + r.slice(1)), g = b, l = a = b = Sn(b.minus(1), b.plus(1), p, 1), w = o(b.times(b), p, 1), u = 3; ;) { if (a = o(a.times(w), p, 1), d = l.plus(Sn(a, new E(u), p, 1)), e(d.d).slice(0, p) === e(l.d).slice(0, p)) { if (l = l.times(2), 0 !== c && (l = l.plus(f(E, p + 2, y).times(c + ""))), l = Sn(l, new E(v), p, 1), null != i) return E.precision = y, l; if (!t(l.d, p - N, M, h)) return o(l, E.precision = y, M, bn = !0); E.precision = p += N, d = a = b = Sn(g.minus(1), g.plus(1), p, 1), w = o(b.times(b), p, 1), u = h = 1 } l = d, u += 2 } } function v(n) { return String(n.s * n.s / 0) } function N(n, e) { var i, t, r; for ((i = e.indexOf(".")) > -1 && (e = e.replace(".", "")), (t = e.search(/e/i)) > 0 ? (0 > i && (i = t), i += +e.slice(t + 1), e = e.substring(0, t)) : 0 > i && (i = e.length), t = 0; 48 === e.charCodeAt(t) ; t++); for (r = e.length; 48 === e.charCodeAt(r - 1) ; --r); if (e = e.slice(t, r)) { if (r -= t, n.e = i = i - t - 1, n.d = [], t = (i + 1) % Rn, 0 > i && (t += Rn), r > t) { for (t && n.d.push(+e.slice(0, t)), r -= Rn; r > t;) n.d.push(+e.slice(t, t += Rn)); e = e.slice(t), t = Rn - e.length } else t -= r; for (; t--;) e += "0"; n.d.push(+e), bn && (n.e > n.constructor.maxE ? (n.d = null, n.e = NaN) : n.e < n.constructor.minE && (n.e = 0, n.d = [0])) } else n.e = 0, n.d = [0]; return n } function b(n, e) { var i, t, s, o, u, f, a, h, l; if ("Infinity" === e || "NaN" === e) return +e || (n.s = NaN), n.e = NaN, n.d = null, n; if (An.test(e)) i = 16, e = e.toLowerCase(); else if (Fn.test(e)) i = 2; else { if (!Dn.test(e)) throw Error(En + e); i = 8 } for (o = e.search(/p/i), o > 0 ? (a = +e.slice(o + 1), e = e.substring(2, o)) : e = e.slice(2), o = e.indexOf("."), u = o >= 0, t = n.constructor, u && (e = e.replace(".", ""), f = e.length, o = f - o, s = d(t, new t(i), o, 2 * o)), h = r(e, i, Pn), l = h.length - 1, o = l; 0 === h[o]; --o) h.pop(); return 0 > o ? new t(0 * n.s) : (n.e = c(h, l), n.d = h, bn = !1, u && (n = Sn(n, s, 4 * f)), a && (n = n.times(Math.abs(a) < 54 ? Math.pow(2, a) : Nn.pow(2, a))), bn = !0, n) } function x(n, e) { var i, t = e.d.length; if (3 > t) return E(n, 2, e, e); i = 1.4 * Math.sqrt(t), i = i > 16 ? 16 : 0 | i, e = e.times(Math.pow(5, -i)), e = E(n, 2, e, e); for (var r, s = new n(5), o = new n(16), u = new n(20) ; i--;) r = e.times(e), e = e.times(s.plus(r.times(o.times(r).minus(u)))); return e } function E(n, e, i, t, r) { var s, o, u, c, f = 1, a = n.precision, h = Math.ceil(a / Rn); for (bn = !1, c = i.times(i), u = new n(t) ; ;) { if (o = Sn(u.times(c), new n(e++ * e++), a, 1), u = r ? t.plus(o) : t.minus(o), t = Sn(o.times(c), new n(e++ * e++), a, 1), o = u.plus(t), void 0 !== o.d[h]) { for (s = h; o.d[s] === u.d[s] && s--;); if (-1 == s) break } s = u, u = t, t = o, o = s, f++ } return bn = !0, o.d.length = h + 1, o } function M(n, e) { var i, t = e.s < 0, r = a(n, n.precision, 1), s = r.times(.5); if (e = e.abs(), e.lte(s)) return dn = t ? 4 : 1, e; if (i = e.divToInt(r), i.isZero()) dn = t ? 3 : 2; else { if (e = e.minus(i.times(r)), e.lte(s)) return dn = p(i) ? t ? 2 : 3 : t ? 4 : 1, e; dn = p(i) ? t ? 1 : 4 : t ? 3 : 2 } return e.minus(r).abs() } function y(n, e, t, s) { var o, c, f, a, h, l, d, p, g, w = n.constructor, m = void 0 !== t; if (m ? (i(t, 1, gn), void 0 === s ? s = w.rounding : i(s, 0, 8)) : (t = w.precision, s = w.rounding), n.isFinite()) { for (d = u(n), f = d.indexOf("."), m ? (o = 2, 16 == e ? t = 4 * t - 3 : 8 == e && (t = 3 * t - 2)) : o = e, f >= 0 && (d = d.replace(".", ""), g = new w(1), g.e = d.length - f, g.d = r(u(g), 10, o), g.e = g.d.length), p = r(d, 10, o), c = h = p.length; 0 == p[--h];) p.pop(); if (p[0]) { if (0 > f ? c-- : (n = new w(n), n.d = p, n.e = c, n = Sn(n, g, t, s, 0, o), p = n.d, c = n.e, l = hn), f = p[t], a = o / 2, l = l || void 0 !== p[t + 1], l = 4 > s ? (void 0 !== f || l) && (0 === s || s === (n.s < 0 ? 3 : 2)) : f > a || f === a && (4 === s || l || 6 === s && 1 & p[t - 1] || s === (n.s < 0 ? 8 : 7)), p.length = t, l) for (; ++p[--t] > o - 1;) p[t] = 0, t || (++c, p.unshift(1)); for (h = p.length; !p[h - 1]; --h); for (f = 0, d = ""; h > f; f++) d += wn.charAt(p[f]); if (m) { if (h > 1) if (16 == e || 8 == e) { for (f = 16 == e ? 4 : 3, --h; h % f; h++) d += "0"; for (p = r(d, o, e), h = p.length; !p[h - 1]; --h); for (f = 1, d = "1."; h > f; f++) d += wn.charAt(p[f]) } else d = d.charAt(0) + "." + d.slice(1); d = d + (0 > c ? "p" : "p+") + c } else if (0 > c) { for (; ++c;) d = "0" + d; d = "0." + d } else if (++c > h) for (c -= h; c--;) d += "0"; else h > c && (d = d.slice(0, c) + "." + d.slice(c)) } else d = m ? "0p+0" : "0"; d = (16 == e ? "0x" : 2 == e ? "0b" : 8 == e ? "0o" : "") + d } else d = v(n); return n.s < 0 ? "-" + d : d } function q(n, e) { return n.length > e ? (n.length = e, !0) : void 0 } function O(n) { return new this(n).abs() } function F(n) { return new this(n).acos() } function A(n) { return new this(n).acosh() } function D(n, e) { return new this(n).plus(e) } function Z(n) { return new this(n).asin() } function P(n) { return new this(n).asinh() } function R(n) { return new this(n).atan() } function L(n) { return new this(n).atanh() } function U(n, e) { n = new this(n), e = new this(e); var i, t = this.precision, r = this.rounding, s = t + 4; return n.s && e.s ? n.d || e.d ? !e.d || n.isZero() ? (i = e.s < 0 ? a(this, t, r) : new this(0), i.s = n.s) : !n.d || e.isZero() ? (i = a(this, s, 1).times(.5), i.s = n.s) : e.s < 0 ? (this.precision = s, this.rounding = 1, i = this.atan(Sn(n, e, s, 1)), e = a(this, s, 1), this.precision = t, this.rounding = r, i = n.s < 0 ? i.minus(e) : i.plus(e)) : i = this.atan(Sn(n, e, s, 1)) : (i = a(this, s, 1).times(e.s > 0 ? .25 : .75), i.s = n.s) : i = new this(NaN), i } function _(n) { return new this(n).cbrt() } function k(n) { return o(n = new this(n), n.e + 1, 2) } function S(n) { if (!n || "object" != typeof n) throw Error(xn + "Object expected"); var e, i, t, r = ["precision", 1, gn, "rounding", 0, 8, "toExpNeg", -pn, 0, "toExpPos", 0, pn, "maxE", 0, pn, "minE", -pn, 0, "modulo", 0, 9]; for (e = 0; e < r.length; e += 3) if (void 0 !== (t = n[i = r[e]])) { if (!(qn(t) === t && t >= r[e + 1] && t <= r[e + 2])) throw Error(En + i + ": " + t); this[i] = t } if (void 0 !== (t = n[i = "crypto"])) { if (t !== !0 && t !== !1 && 0 !== t && 1 !== t) throw Error(En + i + ": " + t); if (t) { if ("undefined" == typeof crypto || !crypto || !crypto.getRandomValues && !crypto.randomBytes) throw Error(yn); this[i] = !0 } else this[i] = !1 } return this } function T(n) { return new this(n).cos() } function C(n) { return new this(n).cosh() } function I(n) { function e(n) { var i, t, r, s = this; if (!(s instanceof e)) return new e(n); if (s.constructor = e, n instanceof e) return s.s = n.s, s.e = n.e, void (s.d = (n = n.d) ? n.slice() : n); if (r = typeof n, "number" === r) { if (0 === n) return s.s = 0 > 1 / n ? -1 : 1, s.e = 0, void (s.d = [0]); if (0 > n ? (n = -n, s.s = -1) : s.s = 1, n === ~~n && 1e7 > n) { for (i = 0, t = n; t >= 10; t /= 10) i++; return s.e = i, void (s.d = [n]) } return 0 * n !== 0 ? (n || (s.s = NaN), s.e = NaN, void (s.d = null)) : N(s, n.toString()) } if ("string" !== r) throw Error(En + n); return 45 === n.charCodeAt(0) ? (n = n.slice(1), s.s = -1) : s.s = 1, Zn.test(n) ? N(s, n) : b(s, n) } var i, t, r; if (e.prototype = kn, e.ROUND_UP = 0, e.ROUND_DOWN = 1, e.ROUND_CEIL = 2, e.ROUND_FLOOR = 3, e.ROUND_HALF_UP = 4, e.ROUND_HALF_DOWN = 5, e.ROUND_HALF_EVEN = 6, e.ROUND_HALF_CEIL = 7, e.ROUND_HALF_FLOOR = 8, e.EUCLID = 9, e.config = e.set = S, e.clone = I, e.abs = O, e.acos = F, e.acosh = A, e.add = D, e.asin = Z, e.asinh = P, e.atan = R, e.atanh = L, e.atan2 = U, e.cbrt = _, e.ceil = k, e.cos = T, e.cosh = C, e.div = H, e.exp = B, e.floor = V, e.hypot = $, e.ln = j, e.log = W, e.log10 = z, e.log2 = J, e.max = G, e.min = K, e.mod = Q, e.mul = X, e.pow = Y, e.random = nn, e.round = en, e.sign = tn, e.sin = rn, e.sinh = sn, e.sqrt = on, e.sub = un, e.tan = cn, e.tanh = fn, e.trunc = an, void 0 === n && (n = {}), n) for (r = ["precision", "rounding", "toExpNeg", "toExpPos", "maxE", "minE", "modulo", "crypto"], i = 0; i < r.length;) n.hasOwnProperty(t = r[i++]) || (n[t] = this[t]); return e.config(n), e } function H(n, e) { return new this(n).div(e) } function B(n) { return new this(n).exp() } function V(n) { return o(n = new this(n), n.e + 1, 3) } function $() { var n, e, i = new this(0); for (bn = !1, n = 0; n < arguments.length;) if (e = new this(arguments[n++]), e.d) i.d && (i = i.plus(e.times(e))); else { if (e.s) return bn = !0, new this(1 / 0); i = e } return bn = !0, i.sqrt() } function j(n) { return new this(n).ln() } function W(n, e) { return new this(n).log(e) } function J(n) { return new this(n).log(2) } function z(n) { return new this(n).log(10) } function G() { return g(this, arguments, "lt") } function K() { return g(this, arguments, "gt") } function Q(n, e) { return new this(n).mod(e) } function X(n, e) { return new this(n).mul(e) } function Y(n, e) { return new this(n).pow(e) } function nn(n) { var e, t, r, s, o = 0, u = new this(1), c = []; if (void 0 === n ? n = this.precision : i(n, 1, gn), r = Math.ceil(n / Rn), this.crypto) if (crypto.getRandomValues) for (e = crypto.getRandomValues(new Uint32Array(r)) ; r > o;) s = e[o], s >= 429e7 ? e[o] = crypto.getRandomValues(new Uint32Array(1))[0] : c[o++] = s % 1e7; else { if (!crypto.randomBytes) throw Error(yn); for (e = crypto.randomBytes(r *= 4) ; r > o;) s = e[o] + (e[o + 1] << 8) + (e[o + 2] << 16) + ((127 & e[o + 3]) << 24), s >= 214e7 ? crypto.randomBytes(4).copy(e, o) : (c.push(s % 1e7), o += 4); o = r / 4 } else for (; r > o;) c[o++] = 1e7 * Math.random() | 0; for (r = c[--o], n %= Rn, r && n && (s = On(10, Rn - n), c[o] = (r / s | 0) * s) ; 0 === c[o]; o--) c.pop(); if (0 > o) t = 0, c = [0]; else { for (t = -1; 0 === c[0]; t -= Rn) c.shift(); for (r = 1, s = c[0]; s >= 10; s /= 10) r++; Rn > r && (t -= Rn - r) } return u.e = t, u.d = c, u } function en(n) { return o(n = new this(n), n.e + 1, this.rounding) } function tn(n) { return n = new this(n), n.d ? n.d[0] ? n.s : 0 * n.s : n.s || NaN } function rn(n) { return new this(n).sin() } function sn(n) { return new this(n).sinh() } function on(n) { return new this(n).sqrt() } function un(n, e) { return new this(n).sub(e) } function cn(n) { return new this(n).tan() } function fn(n) { return new this(n).tanh() } function an(n) { return o(n = new this(n), n.e + 1, 1) } var hn, ln, dn, pn = 9e15, gn = 1e9, wn = "0123456789abcdef", mn = "2.3025850929940456840179914546843642076011014886287729760333279009675726096773524802359972050895982983419677840422862486334095254650828067566662873690987816894829072083255546808437998948262331985283935053089653777326288461633662222876982198867465436674744042432743651550489343149393914796194044002221051017141748003688084012647080685567743216228355220114804663715659121373450747856947683463616792101806445070648000277502684916746550586856935673420670581136429224554405758925724208241314695689016758940256776311356919292033376587141660230105703089634572075440370847469940168269282808481184289314848524948644871927809676271275775397027668605952496716674183485704422507197965004714951050492214776567636938662976979522110718264549734772662425709429322582798502585509785265383207606726317164309505995087807523710333101197857547331541421808427543863591778117054309827482385045648019095610299291824318237525357709750539565187697510374970888692180205189339507238539205144634197265287286965110862571492198849978748873771345686209167058", vn = "3.1415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679821480865132823066470938446095505822317253594081284811174502841027019385211055596446229489549303819644288109756659334461284756482337867831652712019091456485669234603486104543266482133936072602491412737245870066063155881748815209209628292540917153643678925903600113305305488204665213841469519415116094330572703657595919530921861173819326117931051185480744623799627495673518857527248912279381830119491298336733624406566430860213949463952247371907021798609437027705392171762931767523846748184676694051320005681271452635608277857713427577896091736371787214684409012249534301465495853710507922796892589235420199561121290219608640344181598136297747713099605187072113499999983729780499510597317328160963185950244594553469083026425223082533446850352619311881710100031378387528865875332083814206171776691473035982534904287554687311595628638823537875937519577818577805321712268066130019278766111959092164201989380952572010654858632789", Nn = { precision: 20, rounding: 4, modulo: 1, toExpNeg: -7, toExpPos: 21, minE: -pn, maxE: pn, crypto: !1 }, bn = !0, xn = "[DecimalError] ", En = xn + "Invalid argument: ", Mn = xn + "Precision limit exceeded", yn = xn + "crypto unavailable", qn = Math.floor, On = Math.pow, Fn = /^0b([01]+(\.[01]*)?|\.[01]+)(p[+-]?\d+)?$/i, An = /^0x([0-9a-f]+(\.[0-9a-f]*)?|\.[0-9a-f]+)(p[+-]?\d+)?$/i, Dn = /^0o([0-7]+(\.[0-7]*)?|\.[0-7]+)(p[+-]?\d+)?$/i, Zn = /^(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i, Pn = 1e7, Rn = 7, Ln = 9007199254740991, Un = mn.length - 1, _n = vn.length - 1, kn = {}; kn.absoluteValue = kn.abs = function () { var n = new this.constructor(this); return n.s < 0 && (n.s = 1), o(n) }, kn.ceil = function () { return o(new this.constructor(this), this.e + 1, 2) }, kn.comparedTo = kn.cmp = function (n) { var e, i, t, r, s = this, o = s.d, u = (n = new s.constructor(n)).d, c = s.s, f = n.s; if (!o || !u) return c && f ? c !== f ? c : o === u ? 0 : !o ^ 0 > c ? 1 : -1 : NaN; if (!o[0] || !u[0]) return o[0] ? c : u[0] ? -f : 0; if (c !== f) return c; if (s.e !== n.e) return s.e > n.e ^ 0 > c ? 1 : -1; for (t = o.length, r = u.length, e = 0, i = r > t ? t : r; i > e; ++e) if (o[e] !== u[e]) return o[e] > u[e] ^ 0 > c ? 1 : -1; return t === r ? 0 : t > r ^ 0 > c ? 1 : -1 }, kn.cosine = kn.cos = function () { var n, e, i = this, t = i.constructor; return i.d ? i.d[0] ? (n = t.precision, e = t.rounding, t.precision = n + Math.max(i.e, i.sd()) + Rn, t.rounding = 1, i = s(t, M(t, i)), t.precision = n, t.rounding = e, o(2 == dn || 3 == dn ? i.neg() : i, n, e, !0)) : new t(1) : new t(NaN) }, kn.cubeRoot = kn.cbrt = function () { var n, i, t, r, s, u, c, f, a, h, l = this, d = l.constructor; if (!l.isFinite() || l.isZero()) return new d(l); for (bn = !1, u = l.s * Math.pow(l.s * l, 1 / 3), u && Math.abs(u) != 1 / 0 ? r = new d(u.toString()) : (t = e(l.d), n = l.e, (u = (n - t.length + 1) % 3) && (t += 1 == u || -2 == u ? "0" : "00"), u = Math.pow(t, 1 / 3), n = qn((n + 1) / 3) - (n % 3 == (0 > n ? -1 : 2)), u == 1 / 0 ? t = "5e" + n : (t = u.toExponential(), t = t.slice(0, t.indexOf("e") + 1) + n), r = new d(t), r.s = l.s), c = (n = d.precision) + 3; ;) if (f = r, a = f.times(f).times(f), h = a.plus(l), r = Sn(h.plus(l).times(f), h.plus(a), c + 2, 1), e(f.d).slice(0, c) === (t = e(r.d)).slice(0, c)) { if (t = t.slice(c - 3, c + 1), "9999" != t && (s || "4999" != t)) { (!+t || !+t.slice(1) && "5" == t.charAt(0)) && (o(r, n + 1, 1), i = !r.times(r).times(r).eq(l)); break } if (!s && (o(f, n + 1, 0), f.times(f).times(f).eq(l))) { r = f; break } c += 4, s = 1 } return bn = !0, o(r, n, d.rounding, i) }, kn.decimalPlaces = kn.dp = function () { var n, e = this.d, i = NaN; if (e) { if (n = e.length - 1, i = (n - qn(this.e / Rn)) * Rn, n = e[n]) for (; n % 10 == 0; n /= 10) i--; 0 > i && (i = 0) } return i }, kn.dividedBy = kn.div = function (n) { return Sn(this, new this.constructor(n)) }, kn.dividedToIntegerBy = kn.divToInt = function (n) { var e = this, i = e.constructor; return o(Sn(e, new i(n), 0, 1, 1), i.precision, i.rounding) }, kn.equals = kn.eq = function (n) { return 0 === this.cmp(n) }, kn.floor = function () { return o(new this.constructor(this), this.e + 1, 3) }, kn.greaterThan = kn.gt = function (n) { return this.cmp(n) > 0 }, kn.greaterThanOrEqualTo = kn.gte = function (n) { var e = this.cmp(n); return 1 == e || 0 === e }, kn.hyperbolicCosine = kn.cosh = function () { var n, e, i, t, r, s = this, u = s.constructor, c = new u(1); if (!s.isFinite()) return new u(s.s ? 1 / 0 : NaN); if (s.isZero()) return c; i = u.precision, t = u.rounding, u.precision = i + Math.max(s.e, s.sd()) + 4, u.rounding = 1, r = s.d.length, 32 > r ? (n = Math.ceil(r / 3), e = Math.pow(4, -n).toString()) : (n = 16, e = "2.3283064365386962890625e-10"), s = E(u, 1, s.times(e), new u(1), !0); for (var f, a = n, h = new u(8) ; a--;) f = s.times(s), s = c.minus(f.times(h.minus(f.times(h)))); return o(s, u.precision = i, u.rounding = t, !0) }, kn.hyperbolicSine = kn.sinh = function () { var n, e, i, t, r = this, s = r.constructor; if (!r.isFinite() || r.isZero()) return new s(r); if (e = s.precision, i = s.rounding, s.precision = e + Math.max(r.e, r.sd()) + 4, s.rounding = 1, t = r.d.length, 3 > t) r = E(s, 2, r, r, !0); else { n = 1.4 * Math.sqrt(t), n = n > 16 ? 16 : 0 | n, r = r.times(Math.pow(5, -n)), r = E(s, 2, r, r, !0); for (var u, c = new s(5), f = new s(16), a = new s(20) ; n--;) u = r.times(r), r = r.times(c.plus(u.times(f.times(u).plus(a)))) } return s.precision = e, s.rounding = i, o(r, e, i, !0) }, kn.hyperbolicTangent = kn.tanh = function () { var n, e, i = this, t = i.constructor; return i.isFinite() ? i.isZero() ? new t(i) : (n = t.precision, e = t.rounding, t.precision = n + 7, t.rounding = 1, Sn(i.sinh(), i.cosh(), t.precision = n, t.rounding = e)) : new t(i.s) }, kn.inverseCosine = kn.acos = function () { var n, e = this, i = e.constructor, t = e.abs().cmp(1), r = i.precision, s = i.rounding; return -1 !== t ? 0 === t ? e.isNeg() ? a(i, r, s) : new i(0) : new i(NaN) : e.isZero() ? a(i, r + 4, s).times(.5) : (i.precision = r + 6, i.rounding = 1, e = e.asin(), n = a(i, r + 4, s).times(.5), i.precision = r, i.rounding = s, n.minus(e)) }, kn.inverseHyperbolicCosine = kn.acosh = function () { var n, e, i = this, t = i.constructor; return i.lte(1) ? new t(i.eq(1) ? 0 : NaN) : i.isFinite() ? (n = t.precision, e = t.rounding, t.precision = n + Math.max(Math.abs(i.e), i.sd()) + 4, t.rounding = 1, bn = !1, i = i.times(i).minus(1).sqrt().plus(i), bn = !0, t.precision = n, t.rounding = e, i.ln()) : new t(i) }, kn.inverseHyperbolicSine = kn.asinh = function () { var n, e, i = this, t = i.constructor; return !i.isFinite() || i.isZero() ? new t(i) : (n = t.precision, e = t.rounding, t.precision = n + 2 * Math.max(Math.abs(i.e), i.sd()) + 6, t.rounding = 1, bn = !1, i = i.times(i).plus(1).sqrt().plus(i), bn = !0, t.precision = n, t.rounding = e, i.ln()) }, kn.inverseHyperbolicTangent = kn.atanh = function () { var n, e, i, t, r = this, s = r.constructor; return r.isFinite() ? r.e >= 0 ? new s(r.abs().eq(1) ? r.s / 0 : r.isZero() ? r : NaN) : (n = s.precision, e = s.rounding, t = r.sd(), Math.max(t, n) < 2 * -r.e - 1 ? o(new s(r), n, e, !0) : (s.precision = i = t - r.e, r = Sn(r.plus(1), new s(1).minus(r), i + n, 1), s.precision = n + 4, s.rounding = 1, r = r.ln(), s.precision = n, s.rounding = e, r.times(.5))) : new s(NaN) }, kn.inverseSine = kn.asin = function () { var n, e, i, t, r = this, s = r.constructor; return r.isZero() ? new s(r) : (e = r.abs().cmp(1), i = s.precision, t = s.rounding, -1 !== e ? 0 === e ? (n = a(s, i + 4, t).times(.5), n.s = r.s, n) : new s(NaN) : (s.precision = i + 6, s.rounding = 1, r = r.div(new s(1).minus(r.times(r)).sqrt().plus(1)).atan(), s.precision = i, s.rounding = t, r.times(2))) }, kn.inverseTangent = kn.atan = function () { var n, e, i, t, r, s, u, c, f, h = this, l = h.constructor, d = l.precision, p = l.rounding; if (h.isFinite()) { if (h.isZero()) return new l(h); if (h.abs().eq(1) && _n >= d + 4) return u = a(l, d + 4, p).times(.25), u.s = h.s, u } else { if (!h.s) return new l(NaN); if (_n >= d + 4) return u = a(l, d + 4, p).times(.5), u.s = h.s, u } for (l.precision = c = d + 10, l.rounding = 1, i = Math.min(28, c / Rn + 2 | 0), n = i; n; --n) h = h.div(h.times(h).plus(1).sqrt().plus(1)); for (bn = !1, e = Math.ceil(c / Rn), t = 1, f = h.times(h), u = new l(h), r = h; -1 !== n;) if (r = r.times(f), s = u.minus(r.div(t += 2)), r = r.times(f), u = s.plus(r.div(t += 2)), void 0 !== u.d[e]) for (n = e; u.d[n] === s.d[n] && n--;); return i && (u = u.times(2 << i - 1)), bn = !0, o(u, l.precision = d, l.rounding = p, !0) }, kn.isFinite = function () { return !!this.d }, kn.isInteger = kn.isInt = function () { return !!this.d && qn(this.e / Rn) > this.d.length - 2 }, kn.isNaN = function () { return !this.s }, kn.isNegative = kn.isNeg = function () { return this.s < 0 }, kn.isPositive = kn.isPos = function () { return this.s > 0 }, kn.isZero = function () { return !!this.d && 0 === this.d[0] }, kn.lessThan = kn.lt = function (n) { return this.cmp(n) < 0 }, kn.lessThanOrEqualTo = kn.lte = function (n) { return this.cmp(n) < 1 }, kn.logarithm = kn.log = function (n) { var i, r, s, u, c, a, h, l, d = this, p = d.constructor, g = p.precision, w = p.rounding, v = 5; if (null == n) n = new p(10), i = !0; else { if (n = new p(n), r = n.d, n.s < 0 || !r || !r[0] || n.eq(1)) return new p(NaN); i = n.eq(10) } if (r = d.d, d.s < 0 || !r || !r[0] || d.eq(1)) return new p(r && !r[0] ? -1 / 0 : 1 != d.s ? NaN : r ? 0 : 1 / 0); if (i) if (r.length > 1) c = !0; else { for (u = r[0]; u % 10 === 0;) u /= 10; c = 1 !== u } if (bn = !1, h = g + v, a = m(d, h), s = i ? f(p, h + 10) : m(n, h), l = Sn(a, s, h, 1), t(l.d, u = g, w)) do if (h += 10, a = m(d, h), s = i ? f(p, h + 10) : m(n, h), l = Sn(a, s, h, 1), !c) { +e(l.d).slice(u + 1, u + 15) + 1 == 1e14 && (l = o(l, g + 1, 0)); break } while (t(l.d, u += 10, w)); return bn = !0, o(l, g, w) }, kn.minus = kn.sub = function (n) { var e, i, t, r, s, u, f, a, h, l, d, p, g = this, w = g.constructor; if (n = new w(n), !g.d || !n.d) return g.s && n.s ? g.d ? n.s = -n.s : n = new w(n.d || g.s !== n.s ? g : NaN) : n = new w(NaN), n; if (g.s != n.s) return n.s = -n.s, g.plus(n); if (h = g.d, p = n.d, f = w.precision, a = w.rounding, !h[0] || !p[0]) { if (p[0]) n.s = -n.s; else { if (!h[0]) return new w(3 === a ? -0 : 0); n = new w(g) } return bn ? o(n, f, a) : n } if (i = qn(n.e / Rn), l = qn(g.e / Rn), h = h.slice(), s = l - i) { for (d = 0 > s, d ? (e = h, s = -s, u = p.length) : (e = p, i = l, u = h.length), t = Math.max(Math.ceil(f / Rn), u) + 2, s > t && (s = t, e.length = 1), e.reverse(), t = s; t--;) e.push(0); e.reverse() } else { for (t = h.length, u = p.length, d = u > t, d && (u = t), t = 0; u > t; t++) if (h[t] != p[t]) { d = h[t] < p[t]; break } s = 0 } for (d && (e = h, h = p, p = e, n.s = -n.s), u = h.length, t = p.length - u; t > 0; --t) h[u++] = 0; for (t = p.length; t > s;) { if (h[--t] < p[t]) { for (r = t; r && 0 === h[--r];) h[r] = Pn - 1; --h[r], h[t] += Pn } h[t] -= p[t] } for (; 0 === h[--u];) h.pop(); for (; 0 === h[0]; h.shift())--i; return h[0] ? (n.d = h, n.e = c(h, i), bn ? o(n, f, a) : n) : new w(3 === a ? -0 : 0) }, kn.modulo = kn.mod = function (n) { var e, i = this, t = i.constructor; return n = new t(n), !i.d || !n.s || n.d && !n.d[0] ? new t(NaN) : !n.d || i.d && !i.d[0] ? o(new t(i), t.precision, t.rounding) : (bn = !1, 9 == t.modulo ? (e = Sn(i, n.abs(), 0, 3, 1), e.s *= n.s) : e = Sn(i, n, 0, t.modulo, 1), e = e.times(n), bn = !0, i.minus(e)) }, kn.naturalExponential = kn.exp = function () { return w(this) }, kn.naturalLogarithm = kn.ln = function () { return m(this) }, kn.negated = kn.neg = function () { var n = new this.constructor(this); return n.s = -n.s, o(n) }, kn.plus = kn.add = function (n) { var e, i, t, r, s, u, f, a, h, l, d = this, p = d.constructor; if (n = new p(n), !d.d || !n.d) return d.s && n.s ? d.d || (n = new p(n.d || d.s === n.s ? d : NaN)) : n = new p(NaN), n; if (d.s != n.s) return n.s = -n.s, d.minus(n); if (h = d.d, l = n.d, f = p.precision, a = p.rounding, !h[0] || !l[0]) return l[0] || (n = new p(d)), bn ? o(n, f, a) : n; if (s = qn(d.e / Rn), t = qn(n.e / Rn), h = h.slice(), r = s - t) { for (0 > r ? (i = h, r = -r, u = l.length) : (i = l, t = s, u = h.length), s = Math.ceil(f / Rn), u = s > u ? s + 1 : u + 1, r > u && (r = u, i.length = 1), i.reverse() ; r--;) i.push(0); i.reverse() } for (u = h.length, r = l.length, 0 > u - r && (r = u, i = l, l = h, h = i), e = 0; r;) e = (h[--r] = h[r] + l[r] + e) / Pn | 0, h[r] %= Pn; for (e && (h.unshift(e), ++t), u = h.length; 0 == h[--u];) h.pop(); return n.d = h, n.e = c(h, t), bn ? o(n, f, a) : n }, kn.precision = kn.sd = function (n) { var e, i = this; if (void 0 !== n && n !== !!n && 1 !== n && 0 !== n) throw Error(En + n); return i.d ? (e = h(i.d), n && i.e + 1 > e && (e = i.e + 1)) : e = NaN, e }, kn.round = function () { var n = this, e = n.constructor; return o(new e(n), n.e + 1, e.rounding) }, kn.sine = kn.sin = function () { var n, e, i = this, t = i.constructor; return i.isFinite() ? i.isZero() ? new t(i) : (n = t.precision, e = t.rounding, t.precision = n + Math.max(i.e, i.sd()) + Rn, t.rounding = 1, i = x(t, M(t, i)), t.precision = n, t.rounding = e, o(dn > 2 ? i.neg() : i, n, e, !0)) : new t(NaN) }, kn.squareRoot = kn.sqrt = function () { var n, i, t, r, s, u, c = this, f = c.d, a = c.e, h = c.s, l = c.constructor; if (1 !== h || !f || !f[0]) return new l(!h || 0 > h && (!f || f[0]) ? NaN : f ? c : 1 / 0); for (bn = !1, h = Math.sqrt(+c), 0 == h || h == 1 / 0 ? (i = e(f), (i.length + a) % 2 == 0 && (i += "0"), h = Math.sqrt(i), a = qn((a + 1) / 2) - (0 > a || a % 2), h == 1 / 0 ? i = "1e" + a : (i = h.toExponential(), i = i.slice(0, i.indexOf("e") + 1) + a), r = new l(i)) : r = new l(h.toString()), t = (a = l.precision) + 3; ;) if (u = r, r = u.plus(Sn(c, u, t + 2, 1)).times(.5), e(u.d).slice(0, t) === (i = e(r.d)).slice(0, t)) { if (i = i.slice(t - 3, t + 1), "9999" != i && (s || "4999" != i)) { (!+i || !+i.slice(1) && "5" == i.charAt(0)) && (o(r, a + 1, 1), n = !r.times(r).eq(c)); break } if (!s && (o(u, a + 1, 0), u.times(u).eq(c))) { r = u; break } t += 4, s = 1 } return bn = !0, o(r, a, l.rounding, n) }, kn.tangent = kn.tan = function () { var n, e, i = this, t = i.constructor; return i.isFinite() ? i.isZero() ? new t(i) : (n = t.precision, e = t.rounding, t.precision = n + 10, t.rounding = 1, i = i.sin(), i.s = 1, i = Sn(i, new t(1).minus(i.times(i)).sqrt(), n + 10, 0), t.precision = n, t.rounding = e, o(2 == dn || 4 == dn ? i.neg() : i, n, e, !0)) : new t(NaN) }, kn.times = kn.mul = function (n) { var e, i, t, r, s, u, f, a, h, l = this, d = l.constructor, p = l.d, g = (n = new d(n)).d; if (n.s *= l.s, !(p && p[0] && g && g[0])) return new d(!n.s || p && !p[0] && !g || g && !g[0] && !p ? NaN : p && g ? 0 * n.s : n.s / 0); for (i = qn(l.e / Rn) + qn(n.e / Rn), a = p.length, h = g.length, h > a && (s = p, p = g, g = s, u = a, a = h, h = u), s = [], u = a + h, t = u; t--;) s.push(0); for (t = h; --t >= 0;) { for (e = 0, r = a + t; r > t;) f = s[r] + g[t] * p[r - t - 1] + e, s[r--] = f % Pn | 0, e = f / Pn | 0; s[r] = (s[r] + e) % Pn | 0 } for (; !s[--u];) s.pop(); for (e ? ++i : s.shift(), t = s.length; !s[--t];) s.pop(); return n.d = s, n.e = c(s, i), bn ? o(n, d.precision, d.rounding) : n }, kn.toBinary = function (n, e) { return y(this, 2, n, e) }, kn.toDecimalPlaces = kn.toDP = function (n, e) { var t = this, r = t.constructor; return t = new r(t), void 0 === n ? t : (i(n, 0, gn), void 0 === e ? e = r.rounding : i(e, 0, 8), o(t, n + t.e + 1, e)) }, kn.toExponential = function (n, e) { var t, r = this, s = r.constructor; return void 0 === n ? t = u(r, !0) : (i(n, 0, gn), void 0 === e ? e = s.rounding : i(e, 0, 8), r = o(new s(r), n + 1, e), t = u(r, !0, n + 1)), r.isNeg() && !r.isZero() ? "-" + t : t }, kn.toFixed = function (n, e) { var t, r, s = this, c = s.constructor; return void 0 === n ? t = u(s) : (i(n, 0, gn), void 0 === e ? e = c.rounding : i(e, 0, 8), r = o(new c(s), n + s.e + 1, e), t = u(r, !1, n + r.e + 1)), s.isNeg() && !s.isZero() ? "-" + t : t }, kn.toFraction = function (n) { var i, t, r, s, o, u, c, f, a, l, d, p, g = this, w = g.d, m = g.constructor; if (!w) return new m(g); if (a = t = new m(1), r = f = new m(0), i = new m(r), o = i.e = h(w) - g.e - 1, u = o % Rn, i.d[0] = On(10, 0 > u ? Rn + u : u), null == n) n = o > 0 ? i : a; else { if (c = new m(n), !c.isInt() || c.lt(a)) throw Error(En + c); n = c.gt(i) ? o > 0 ? i : a : c } for (bn = !1, c = new m(e(w)), l = m.precision, m.precision = o = w.length * Rn * 2; d = Sn(c, i, 0, 1, 1), s = t.plus(d.times(r)), 1 != s.cmp(n) ;) t = r, r = s, s = a, a = f.plus(d.times(s)), f = s, s = i, i = c.minus(d.times(s)), c = s; return s = Sn(n.minus(t), r, 0, 1, 1), f = f.plus(s.times(a)), t = t.plus(s.times(r)), f.s = a.s = g.s, p = Sn(a, r, o, 1).minus(g).abs().cmp(Sn(f, t, o, 1).minus(g).abs()) < 1 ? [a, r] : [f, t], m.precision = l, bn = !0, p }, kn.toHexadecimal = kn.toHex = function (n, e) { return y(this, 16, n, e) }, kn.toNearest = function (n, e) { var t = this, r = t.constructor; if (t = new r(t), null == n) { if (!t.d) return t; n = new r(1), e = r.rounding } else { if (n = new r(n), void 0 !== e && i(e, 0, 8), !t.d) return n.s ? t : n; if (!n.d) return n.s && (n.s = t.s), n } return n.d[0] ? (bn = !1, 4 > e && (e = [4, 5, 7, 8][e]), t = Sn(t, n, 0, e, 1).times(n), bn = !0, o(t)) : (n.s = t.s, t = n), t }, kn.toNumber = function () { return +this }, kn.toOctal = function (n, e) { return y(this, 8, n, e) }, kn.toPower = kn.pow = function (n) { var i, r, s, u, c, f, a, h = this, l = h.constructor, p = +(n = new l(n)); if (!(h.d && n.d && h.d[0] && n.d[0])) return new l(On(+h, p)); if (h = new l(h), h.eq(1)) return h; if (s = l.precision, c = l.rounding, n.eq(1)) return o(h, s, c); if (i = qn(n.e / Rn), r = n.d.length - 1, a = i >= r, f = h.s, a) { if ((r = 0 > p ? -p : p) <= Ln) return u = d(l, h, r, s), n.s < 0 ? new l(1).div(u) : o(u, s, c) } else if (0 > f) return new l(NaN); return f = 0 > f && 1 & n.d[Math.max(i, r)] ? -1 : 1, r = On(+h, p), i = 0 != r && isFinite(r) ? new l(r + "").e : qn(p * (Math.log("0." + e(h.d)) / Math.LN10 + h.e + 1)), i > l.maxE + 1 || i < l.minE - 1 ? new l(i > 0 ? f / 0 : 0) : (bn = !1, l.rounding = h.s = 1, r = Math.min(12, (i + "").length), u = w(n.times(m(h, s + r)), s), u = o(u, s + 5, 1), t(u.d, s, c) && (i = s + 10, u = o(w(n.times(m(h, i + r)), i), i + 5, 1), +e(u.d).slice(s + 1, s + 15) + 1 == 1e14 && (u = o(u, s + 1, 0))), u.s = f, bn = !0, l.rounding = c, o(u, s, c)) }, kn.toPrecision = function (n, e) { var t, r = this, s = r.constructor; return void 0 === n ? t = u(r, r.e <= s.toExpNeg || r.e >= s.toExpPos) : (i(n, 1, gn), void 0 === e ? e = s.rounding : i(e, 0, 8), r = o(new s(r), n, e), t = u(r, n <= r.e || r.e <= s.toExpNeg, n)), r.isNeg() && !r.isZero() ? "-" + t : t }, kn.toSignificantDigits = kn.toSD = function (n, e) { var t = this, r = t.constructor; return void 0 === n ? (n = r.precision, e = r.rounding) : (i(n, 1, gn), void 0 === e ? e = r.rounding : i(e, 0, 8)), o(new r(t), n, e) }, kn.toString = function () { var n = this, e = n.constructor, i = u(n, n.e <= e.toExpNeg || n.e >= e.toExpPos); return n.isNeg() && !n.isZero() ? "-" + i : i }, kn.truncated = kn.trunc = function () { return o(new this.constructor(this), this.e + 1, 1) }, kn.valueOf = kn.toJSON = function () { var n = this, e = n.constructor, i = u(n, n.e <= e.toExpNeg || n.e >= e.toExpPos); return n.isNeg() ? "-" + i : i }; var Sn = function () { function n(n, e, i) { var t, r = 0, s = n.length; for (n = n.slice() ; s--;) t = n[s] * e + r, n[s] = t % i | 0, r = t / i | 0; return r && n.unshift(r), n } function e(n, e, i, t) { var r, s; if (i != t) s = i > t ? 1 : -1; else for (r = s = 0; i > r; r++) if (n[r] != e[r]) { s = n[r] > e[r] ? 1 : -1; break } return s } function i(n, e, i, t) { for (var r = 0; i--;) n[i] -= r, r = n[i] < e[i] ? 1 : 0, n[i] = r * t + n[i] - e[i]; for (; !n[0] && n.length > 1;) n.shift() } return function (t, r, s, u, c, f) { var a, h, l, d, p, g, w, m, v, N, b, x, E, M, y, q, O, F, A, D, Z = t.constructor, P = t.s == r.s ? 1 : -1, R = t.d, L = r.d; if (!(R && R[0] && L && L[0])) return new Z(t.s && r.s && (R ? !L || R[0] != L[0] : L) ? R && 0 == R[0] || !L ? 0 * P : P / 0 : NaN); for (f ? (p = 1, h = t.e - r.e) : (f = Pn, p = Rn, h = qn(t.e / p) - qn(r.e / p)), A = L.length, O = R.length, v = new Z(P), N = v.d = [], l = 0; L[l] == (R[l] || 0) ; l++); if (L[l] > (R[l] || 0) && h--, null == s ? (M = s = Z.precision, u = Z.rounding) : M = c ? s + (t.e - r.e) + 1 : s, 0 > M) N.push(1), g = !0; else { if (M = M / p + 2 | 0, l = 0, 1 == A) { for (d = 0, L = L[0], M++; (O > l || d) && M--; l++) y = d * f + (R[l] || 0), N[l] = y / L | 0, d = y % L | 0; g = d || O > l } else { for (d = f / (L[0] + 1) | 0, d > 1 && (L = n(L, d, f), R = n(R, d, f), A = L.length, O = R.length), q = A, b = R.slice(0, A), x = b.length; A > x;) b[x++] = 0; D = L.slice(), D.unshift(0), F = L[0], L[1] >= f / 2 && ++F; do d = 0, a = e(L, b, A, x), 0 > a ? (E = b[0], A != x && (E = E * f + (b[1] || 0)), d = E / F | 0, d > 1 ? (d >= f && (d = f - 1), w = n(L, d, f), m = w.length, x = b.length, a = e(w, b, m, x), 1 == a && (d--, i(w, m > A ? D : L, m, f))) : (0 == d && (a = d = 1), w = L.slice()), m = w.length, x > m && w.unshift(0), i(b, w, x, f), -1 == a && (x = b.length, a = e(L, b, A, x), 1 > a && (d++, i(b, x > A ? D : L, x, f))), x = b.length) : 0 === a && (d++, b = [0]), N[l++] = d, a && b[0] ? b[x++] = R[q] || 0 : (b = [R[q]], x = 1); while ((q++ < O || void 0 !== b[0]) && M--); g = void 0 !== b[0] } N[0] || N.shift() } if (1 == p) v.e = h, hn = g; else { for (l = 1, d = N[0]; d >= 10; d /= 10) l++; v.e = l + h * p - 1, o(v, c ? s + v.e + 1 : s, u, g) } return v } }(); Nn = I(Nn), mn = new Nn(mn), vn = new Nn(vn), Bridge.$Decimal = Nn, "function" == typeof define && define.amd ? define(function () { return Nn }) : "undefined" != typeof module && module.exports ? module.exports = Nn["default"] = Nn.Decimal = Nn : (n || (n = "undefined" != typeof self && self && self.self == self ? self : Function("return this")()), ln = n.Decimal, Nn.noConflict = function () { return n.Decimal = ln, Nn }/*, n.Decimal = Nn*/) }(Bridge.global);
+    !function (n) { "use strict"; function e(n) { var e, i, t, r = n.length - 1, s = "", o = n[0]; if (r > 0) { for (s += o, e = 1; r > e; e++) t = n[e] + "", i = Rn - t.length, i && (s += l(i)), s += t; o = n[e], t = o + "", i = Rn - t.length, i && (s += l(i)) } else if (0 === o) return "0"; for (; o % 10 === 0;) o /= 10; return s + o } function i(n, e, i) { if (n !== ~~n || e > n || n > i) throw Error(En + n) } function t(n, e, i, t) { var r, s, o, u; for (s = n[0]; s >= 10; s /= 10)--e; return --e < 0 ? (e += Rn, r = 0) : (r = Math.ceil((e + 1) / Rn), e %= Rn), s = On(10, Rn - e), u = n[r] % s | 0, null == t ? 3 > e ? (0 == e ? u = u / 100 | 0 : 1 == e && (u = u / 10 | 0), o = 4 > i && 99999 == u || i > 3 && 49999 == u || 5e4 == u || 0 == u) : o = (4 > i && u + 1 == s || i > 3 && u + 1 == s / 2) && (n[r + 1] / s / 100 | 0) == On(10, e - 2) - 1 || (u == s / 2 || 0 == u) && 0 == (n[r + 1] / s / 100 | 0) : 4 > e ? (0 == e ? u = u / 1e3 | 0 : 1 == e ? u = u / 100 | 0 : 2 == e && (u = u / 10 | 0), o = (t || 4 > i) && 9999 == u || !t && i > 3 && 4999 == u) : o = ((t || 4 > i) && u + 1 == s || !t && i > 3 && u + 1 == s / 2) && (n[r + 1] / s / 1e3 | 0) == On(10, e - 3) - 1, o } function r(n, e, i) { for (var t, r, s = [0], o = 0, u = n.length; u > o;) { for (r = s.length; r--;) s[r] *= e; for (s[0] += wn.indexOf(n.charAt(o++)), t = 0; t < s.length; t++) s[t] > i - 1 && (void 0 === s[t + 1] && (s[t + 1] = 0), s[t + 1] += s[t] / i | 0, s[t] %= i) } return s.reverse() } function s(n, e) { var i, t, r = e.d.length; 32 > r ? (i = Math.ceil(r / 3), t = Math.pow(4, -i).toString()) : (i = 16, t = "2.3283064365386962890625e-10"), n.precision += i, e = E(n, 1, e.times(t), new n(1)); for (var s = i; s--;) { var o = e.times(e); e = o.times(o).minus(o).times(8).plus(1) } return n.precision -= i, e } function o(n, e, i, t) { var r, s, o, u, c, f, a, h, l, d = n.constructor; n: if (null != e) { if (h = n.d, !h) return n; for (r = 1, u = h[0]; u >= 10; u /= 10) r++; if (s = e - r, 0 > s) s += Rn, o = e, a = h[l = 0], c = a / On(10, r - o - 1) % 10 | 0; else if (l = Math.ceil((s + 1) / Rn), u = h.length, l >= u) { if (!t) break n; for (; u++ <= l;) h.push(0); a = c = 0, r = 1, s %= Rn, o = s - Rn + 1 } else { for (a = u = h[l], r = 1; u >= 10; u /= 10) r++; s %= Rn, o = s - Rn + r, c = 0 > o ? 0 : a / On(10, r - o - 1) % 10 | 0 } if (t = t || 0 > e || void 0 !== h[l + 1] || (0 > o ? a : a % On(10, r - o - 1)), f = 4 > i ? (c || t) && (0 == i || i == (n.s < 0 ? 3 : 2)) : c > 5 || 5 == c && (4 == i || t || 6 == i && (s > 0 ? o > 0 ? a / On(10, r - o) : 0 : h[l - 1]) % 10 & 1 || i == (n.s < 0 ? 8 : 7)), 1 > e || !h[0]) return h.length = 0, f ? (e -= n.e + 1, h[0] = On(10, (Rn - e % Rn) % Rn), n.e = -e || 0) : h[0] = n.e = 0, n; if (0 == s ? (h.length = l, u = 1, l--) : (h.length = l + 1, u = On(10, Rn - s), h[l] = o > 0 ? (a / On(10, r - o) % On(10, o) | 0) * u : 0), f) for (; ;) { if (0 == l) { for (s = 1, o = h[0]; o >= 10; o /= 10) s++; for (o = h[0] += u, u = 1; o >= 10; o /= 10) u++; s != u && (n.e++, h[0] == Pn && (h[0] = 1)); break } if (h[l] += u, h[l] != Pn) break; h[l--] = 0, u = 1 } for (s = h.length; 0 === h[--s];) h.pop() } return bn && (n.e > d.maxE ? (n.d = null, n.e = NaN) : n.e < d.minE && (n.e = 0, n.d = [0])), n } function u(n, i, t) { if (!n.isFinite()) return v(n); var r, s = n.e, o = e(n.d), u = o.length; return i ? (t && (r = t - u) > 0 ? o = o.charAt(0) + "." + o.slice(1) + l(r) : u > 1 && (o = o.charAt(0) + "." + o.slice(1)), o = o + (n.e < 0 ? "e" : "e+") + n.e) : 0 > s ? (o = "0." + l(-s - 1) + o, t && (r = t - u) > 0 && (o += l(r))) : s >= u ? (o += l(s + 1 - u), t && (r = t - s - 1) > 0 && (o = o + "." + l(r))) : ((r = s + 1) < u && (o = o.slice(0, r) + "." + o.slice(r)), t && (r = t - u) > 0 && (s + 1 === u && (o += "."), o += l(r))), o } function c(n, e) { for (var i = 1, t = n[0]; t >= 10; t /= 10) i++; return i + e * Rn - 1 } function f(n, e, i) { if (e > Un) throw bn = !0, i && (n.precision = i), Error(Mn); return o(new n(mn), e, 1, !0) } function a(n, e, i) { if (e > _n) throw Error(Mn); return o(new n(vn), e, i, !0) } function h(n) { var e = n.length - 1, i = e * Rn + 1; if (e = n[e]) { for (; e % 10 == 0; e /= 10) i--; for (e = n[0]; e >= 10; e /= 10) i++ } return i } function l(n) { for (var e = ""; n--;) e += "0"; return e } function d(n, e, i, t) { var r, s = new n(1), o = Math.ceil(t / Rn + 4); for (bn = !1; ;) { if (i % 2 && (s = s.times(e), q(s.d, o) && (r = !0)), i = qn(i / 2), 0 === i) { i = s.d.length - 1, r && 0 === s.d[i] && ++s.d[i]; break } e = e.times(e), q(e.d, o) } return bn = !0, s } function p(n) { return 1 & n.d[n.d.length - 1] } function g(n, e, i) { for (var t, r = new n(e[0]), s = 0; ++s < e.length;) { if (t = new n(e[s]), !t.s) { r = t; break } r[i](t) && (r = t) } return r } function w(n, i) { var r, s, u, c, f, a, h, l = 0, d = 0, p = 0, g = n.constructor, w = g.rounding, m = g.precision; if (!n.d || !n.d[0] || n.e > 17) return new g(n.d ? n.d[0] ? n.s < 0 ? 0 : 1 / 0 : 1 : n.s ? n.s < 0 ? 0 : n : NaN); for (null == i ? (bn = !1, h = m) : h = i, a = new g(.03125) ; n.e > -2;) n = n.times(a), p += 5; for (s = Math.log(On(2, p)) / Math.LN10 * 2 + 5 | 0, h += s, r = c = f = new g(1), g.precision = h; ;) { if (c = o(c.times(n), h, 1), r = r.times(++d), a = f.plus(Sn(c, r, h, 1)), e(a.d).slice(0, h) === e(f.d).slice(0, h)) { for (u = p; u--;) f = o(f.times(f), h, 1); if (null != i) return g.precision = m, f; if (!(3 > l && t(f.d, h - s, w, l))) return o(f, g.precision = m, w, bn = !0); g.precision = h += 10, r = c = a = new g(1), d = 0, l++ } f = a } } function m(n, i) { var r, s, u, c, a, h, l, d, p, g, w, v = 1, N = 10, b = n, x = b.d, E = b.constructor, M = E.rounding, y = E.precision; if (b.s < 0 || !x || !x[0] || !b.e && 1 == x[0] && 1 == x.length) return new E(x && !x[0] ? -1 / 0 : 1 != b.s ? NaN : x ? 0 : b); if (null == i ? (bn = !1, p = y) : p = i, E.precision = p += N, r = e(x), s = r.charAt(0), !(Math.abs(c = b.e) < 15e14)) return d = f(E, p + 2, y).times(c + ""), b = m(new E(s + "." + r.slice(1)), p - N).plus(d), E.precision = y, null == i ? o(b, y, M, bn = !0) : b; for (; 7 > s && 1 != s || 1 == s && r.charAt(1) > 3;) b = b.times(n), r = e(b.d), s = r.charAt(0), v++; for (c = b.e, s > 1 ? (b = new E("0." + r), c++) : b = new E(s + "." + r.slice(1)), g = b, l = a = b = Sn(b.minus(1), b.plus(1), p, 1), w = o(b.times(b), p, 1), u = 3; ;) { if (a = o(a.times(w), p, 1), d = l.plus(Sn(a, new E(u), p, 1)), e(d.d).slice(0, p) === e(l.d).slice(0, p)) { if (l = l.times(2), 0 !== c && (l = l.plus(f(E, p + 2, y).times(c + ""))), l = Sn(l, new E(v), p, 1), null != i) return E.precision = y, l; if (!t(l.d, p - N, M, h)) return o(l, E.precision = y, M, bn = !0); E.precision = p += N, d = a = b = Sn(g.minus(1), g.plus(1), p, 1), w = o(b.times(b), p, 1), u = h = 1 } l = d, u += 2 } } function v(n) { return String(n.s * n.s / 0) } function N(n, e) { var i, t, r; for ((i = e.indexOf(".")) > -1 && (e = e.replace(".", "")), (t = e.search(/e/i)) > 0 ? (0 > i && (i = t), i += +e.slice(t + 1), e = e.substring(0, t)) : 0 > i && (i = e.length), t = 0; 48 === e.charCodeAt(t) ; t++); for (r = e.length; 48 === e.charCodeAt(r - 1) ; --r); if (e = e.slice(t, r)) { if (r -= t, n.e = i = i - t - 1, n.d = [], t = (i + 1) % Rn, 0 > i && (t += Rn), r > t) { for (t && n.d.push(+e.slice(0, t)), r -= Rn; r > t;) n.d.push(+e.slice(t, t += Rn)); e = e.slice(t), t = Rn - e.length } else t -= r; for (; t--;) e += "0"; n.d.push(+e), bn && (n.e > n.constructor.maxE ? (n.d = null, n.e = NaN) : n.e < n.constructor.minE && (n.e = 0, n.d = [0])) } else n.e = 0, n.d = [0]; return n } function b(n, e) { var i, t, s, o, u, f, a, h, l; if ("Infinity" === e || "NaN" === e) return +e || (n.s = NaN), n.e = NaN, n.d = null, n; if (An.test(e)) i = 16, e = e.toLowerCase(); else if (Fn.test(e)) i = 2; else { if (!Dn.test(e)) throw Error(En + e); i = 8 } for (o = e.search(/p/i), o > 0 ? (a = +e.slice(o + 1), e = e.substring(2, o)) : e = e.slice(2), o = e.indexOf("."), u = o >= 0, t = n.constructor, u && (e = e.replace(".", ""), f = e.length, o = f - o, s = d(t, new t(i), o, 2 * o)), h = r(e, i, Pn), l = h.length - 1, o = l; 0 === h[o]; --o) h.pop(); return 0 > o ? new t(0 * n.s) : (n.e = c(h, l), n.d = h, bn = !1, u && (n = Sn(n, s, 4 * f)), a && (n = n.times(Math.abs(a) < 54 ? Math.pow(2, a) : Nn.pow(2, a))), bn = !0, n) } function x(n, e) { var i, t = e.d.length; if (3 > t) return E(n, 2, e, e); i = 1.4 * Math.sqrt(t), i = i > 16 ? 16 : 0 | i, e = e.times(Math.pow(5, -i)), e = E(n, 2, e, e); for (var r, s = new n(5), o = new n(16), u = new n(20) ; i--;) r = e.times(e), e = e.times(s.plus(r.times(o.times(r).minus(u)))); return e } function E(n, e, i, t, r) { var s, o, u, c, f = 1, a = n.precision, h = Math.ceil(a / Rn); for (bn = !1, c = i.times(i), u = new n(t) ; ;) { if (o = Sn(u.times(c), new n(e++ * e++), a, 1), u = r ? t.plus(o) : t.minus(o), t = Sn(o.times(c), new n(e++ * e++), a, 1), o = u.plus(t), void 0 !== o.d[h]) { for (s = h; o.d[s] === u.d[s] && s--;); if (-1 == s) break } s = u, u = t, t = o, o = s, f++ } return bn = !0, o.d.length = h + 1, o } function M(n, e) { var i, t = e.s < 0, r = a(n, n.precision, 1), s = r.times(.5); if (e = e.abs(), e.lte(s)) return dn = t ? 4 : 1, e; if (i = e.divToInt(r), i.isZero()) dn = t ? 3 : 2; else { if (e = e.minus(i.times(r)), e.lte(s)) return dn = p(i) ? t ? 2 : 3 : t ? 4 : 1, e; dn = p(i) ? t ? 1 : 4 : t ? 3 : 2 } return e.minus(r).abs() } function y(n, e, t, s) { var o, c, f, a, h, l, d, p, g, w = n.constructor, m = void 0 !== t; if (m ? (i(t, 1, gn), void 0 === s ? s = w.rounding : i(s, 0, 8)) : (t = w.precision, s = w.rounding), n.isFinite()) { for (d = u(n), f = d.indexOf("."), m ? (o = 2, 16 == e ? t = 4 * t - 3 : 8 == e && (t = 3 * t - 2)) : o = e, f >= 0 && (d = d.replace(".", ""), g = new w(1), g.e = d.length - f, g.d = r(u(g), 10, o), g.e = g.d.length), p = r(d, 10, o), c = h = p.length; 0 == p[--h];) p.pop(); if (p[0]) { if (0 > f ? c-- : (n = new w(n), n.d = p, n.e = c, n = Sn(n, g, t, s, 0, o), p = n.d, c = n.e, l = hn), f = p[t], a = o / 2, l = l || void 0 !== p[t + 1], l = 4 > s ? (void 0 !== f || l) && (0 === s || s === (n.s < 0 ? 3 : 2)) : f > a || f === a && (4 === s || l || 6 === s && 1 & p[t - 1] || s === (n.s < 0 ? 8 : 7)), p.length = t, l) for (; ++p[--t] > o - 1;) p[t] = 0, t || (++c, p.unshift(1)); for (h = p.length; !p[h - 1]; --h); for (f = 0, d = ""; h > f; f++) d += wn.charAt(p[f]); if (m) { if (h > 1) if (16 == e || 8 == e) { for (f = 16 == e ? 4 : 3, --h; h % f; h++) d += "0"; for (p = r(d, o, e), h = p.length; !p[h - 1]; --h); for (f = 1, d = "1."; h > f; f++) d += wn.charAt(p[f]) } else d = d.charAt(0) + "." + d.slice(1); d = d + (0 > c ? "p" : "p+") + c } else if (0 > c) { for (; ++c;) d = "0" + d; d = "0." + d } else if (++c > h) for (c -= h; c--;) d += "0"; else h > c && (d = d.slice(0, c) + "." + d.slice(c)) } else d = m ? "0p+0" : "0"; d = (16 == e ? "0x" : 2 == e ? "0b" : 8 == e ? "0o" : "") + d } else d = v(n); return n.s < 0 ? "-" + d : d } function q(n, e) { return n.length > e ? (n.length = e, !0) : void 0 } function O(n) { return new this(n).abs() } function F(n) { return new this(n).acos() } function A(n) { return new this(n).acosh() } function D(n, e) { return new this(n).plus(e) } function Z(n) { return new this(n).asin() } function P(n) { return new this(n).asinh() } function R(n) { return new this(n).atan() } function L(n) { return new this(n).atanh() } function U(n, e) { n = new this(n), e = new this(e); var i, t = this.precision, r = this.rounding, s = t + 4; return n.s && e.s ? n.d || e.d ? !e.d || n.isZero() ? (i = e.s < 0 ? a(this, t, r) : new this(0), i.s = n.s) : !n.d || e.isZero() ? (i = a(this, s, 1).times(.5), i.s = n.s) : e.s < 0 ? (this.precision = s, this.rounding = 1, i = this.atan(Sn(n, e, s, 1)), e = a(this, s, 1), this.precision = t, this.rounding = r, i = n.s < 0 ? i.minus(e) : i.plus(e)) : i = this.atan(Sn(n, e, s, 1)) : (i = a(this, s, 1).times(e.s > 0 ? .25 : .75), i.s = n.s) : i = new this(NaN), i } function _(n) { return new this(n).cbrt() } function k(n) { return o(n = new this(n), n.e + 1, 2) } function S(n) { if (!n || "object" != typeof n) throw Error(xn + "Object expected"); var e, i, t, r = ["precision", 1, gn, "rounding", 0, 8, "toExpNeg", -pn, 0, "toExpPos", 0, pn, "maxE", 0, pn, "minE", -pn, 0, "modulo", 0, 9]; for (e = 0; e < r.length; e += 3) if (void 0 !== (t = n[i = r[e]])) { if (!(qn(t) === t && t >= r[e + 1] && t <= r[e + 2])) throw Error(En + i + ": " + t); this[i] = t } if (void 0 !== (t = n[i = "crypto"])) { if (t !== !0 && t !== !1 && 0 !== t && 1 !== t) throw Error(En + i + ": " + t); if (t) { if ("undefined" == typeof crypto || !crypto || !crypto.getRandomValues && !crypto.randomBytes) throw Error(yn); this[i] = !0 } else this[i] = !1 } return this } function T(n) { return new this(n).cos() } function C(n) { return new this(n).cosh() } function I(n) { function e(n) { var i, t, r, s = this; if (!(s instanceof e)) return new e(n); if (s.constructor = e, n instanceof e) return s.s = n.s, s.e = n.e, void (s.d = (n = n.d) ? n.slice() : n); if (r = typeof n, "number" === r) { if (0 === n) return s.s = 0 > 1 / n ? -1 : 1, s.e = 0, void (s.d = [0]); if (0 > n ? (n = -n, s.s = -1) : s.s = 1, n === ~~n && 1e7 > n) { for (i = 0, t = n; t >= 10; t /= 10) i++; return s.e = i, void (s.d = [n]) } return 0 * n !== 0 ? (n || (s.s = NaN), s.e = NaN, void (s.d = null)) : N(s, n.toString()) } if ("string" !== r) throw Error(En + n); return 45 === n.charCodeAt(0) ? (n = n.slice(1), s.s = -1) : s.s = 1, Zn.test(n) ? N(s, n) : b(s, n) } var i, t, r; if (e.prototype = kn, e.ROUND_UP = 0, e.ROUND_DOWN = 1, e.ROUND_CEIL = 2, e.ROUND_FLOOR = 3, e.ROUND_HALF_UP = 4, e.ROUND_HALF_DOWN = 5, e.ROUND_HALF_EVEN = 6, e.ROUND_HALF_CEIL = 7, e.ROUND_HALF_FLOOR = 8, e.EUCLID = 9, e.config = e.set = S, e.clone = I, e.abs = O, e.acos = F, e.acosh = A, e.add = D, e.asin = Z, e.asinh = P, e.atan = R, e.atanh = L, e.atan2 = U, e.cbrt = _, e.ceil = k, e.cos = T, e.cosh = C, e.div = H, e.exp = B, e.floor = V, e.hypot = $, e.ln = j, e.log = W, e.log10 = z, e.log2 = J, e.max = G, e.min = K, e.mod = Q, e.mul = X, e.pow = Y, e.random = nn, e.round = en, e.sign = tn, e.sin = rn, e.sinh = sn, e.sqrt = on, e.sub = un, e.tan = cn, e.tanh = fn, e.trunc = an, void 0 === n && (n = {}), n) for (r = ["precision", "rounding", "toExpNeg", "toExpPos", "maxE", "minE", "modulo", "crypto"], i = 0; i < r.length;) n.hasOwnProperty(t = r[i++]) || (n[t] = this[t]); return e.config(n), e } function H(n, e) { return new this(n).div(e) } function B(n) { return new this(n).exp() } function V(n) { return o(n = new this(n), n.e + 1, 3) } function $() { var n, e, i = new this(0); for (bn = !1, n = 0; n < arguments.length;) if (e = new this(arguments[n++]), e.d) i.d && (i = i.plus(e.times(e))); else { if (e.s) return bn = !0, new this(1 / 0); i = e } return bn = !0, i.sqrt() } function j(n) { return new this(n).ln() } function W(n, e) { return new this(n).log(e) } function J(n) { return new this(n).log(2) } function z(n) { return new this(n).log(10) } function G() { return g(this, arguments, "lt") } function K() { return g(this, arguments, "gt") } function Q(n, e) { return new this(n).mod(e) } function X(n, e) { return new this(n).mul(e) } function Y(n, e) { return new this(n).pow(e) } function nn(n) { var e, t, r, s, o = 0, u = new this(1), c = []; if (void 0 === n ? n = this.precision : i(n, 1, gn), r = Math.ceil(n / Rn), this.crypto) if (crypto.getRandomValues) for (e = crypto.getRandomValues(new Uint32Array(r)) ; r > o;) s = e[o], s >= 429e7 ? e[o] = crypto.getRandomValues(new Uint32Array(1))[0] : c[o++] = s % 1e7; else { if (!crypto.randomBytes) throw Error(yn); for (e = crypto.randomBytes(r *= 4) ; r > o;) s = e[o] + (e[o + 1] << 8) + (e[o + 2] << 16) + ((127 & e[o + 3]) << 24), s >= 214e7 ? crypto.randomBytes(4).copy(e, o) : (c.push(s % 1e7), o += 4); o = r / 4 } else for (; r > o;) c[o++] = 1e7 * Math.random() | 0; for (r = c[--o], n %= Rn, r && n && (s = On(10, Rn - n), c[o] = (r / s | 0) * s) ; 0 === c[o]; o--) c.pop(); if (0 > o) t = 0, c = [0]; else { for (t = -1; 0 === c[0]; t -= Rn) c.shift(); for (r = 1, s = c[0]; s >= 10; s /= 10) r++; Rn > r && (t -= Rn - r) } return u.e = t, u.d = c, u } function en(n) { return o(n = new this(n), n.e + 1, this.rounding) } function tn(n) { return n = new this(n), n.d ? n.d[0] ? n.s : 0 * n.s : n.s || NaN } function rn(n) { return new this(n).sin() } function sn(n) { return new this(n).sinh() } function on(n) { return new this(n).sqrt() } function un(n, e) { return new this(n).sub(e) } function cn(n) { return new this(n).tan() } function fn(n) { return new this(n).tanh() } function an(n) { return o(n = new this(n), n.e + 1, 1) } var hn, ln, dn, pn = 9e15, gn = 1e9, wn = "0123456789abcdef", mn = "2.3025850929940456840179914546843642076011014886287729760333279009675726096773524802359972050895982983419677840422862486334095254650828067566662873690987816894829072083255546808437998948262331985283935053089653777326288461633662222876982198867465436674744042432743651550489343149393914796194044002221051017141748003688084012647080685567743216228355220114804663715659121373450747856947683463616792101806445070648000277502684916746550586856935673420670581136429224554405758925724208241314695689016758940256776311356919292033376587141660230105703089634572075440370847469940168269282808481184289314848524948644871927809676271275775397027668605952496716674183485704422507197965004714951050492214776567636938662976979522110718264549734772662425709429322582798502585509785265383207606726317164309505995087807523710333101197857547331541421808427543863591778117054309827482385045648019095610299291824318237525357709750539565187697510374970888692180205189339507238539205144634197265287286965110862571492198849978748873771345686209167058", vn = "3.1415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679821480865132823066470938446095505822317253594081284811174502841027019385211055596446229489549303819644288109756659334461284756482337867831652712019091456485669234603486104543266482133936072602491412737245870066063155881748815209209628292540917153643678925903600113305305488204665213841469519415116094330572703657595919530921861173819326117931051185480744623799627495673518857527248912279381830119491298336733624406566430860213949463952247371907021798609437027705392171762931767523846748184676694051320005681271452635608277857713427577896091736371787214684409012249534301465495853710507922796892589235420199561121290219608640344181598136297747713099605187072113499999983729780499510597317328160963185950244594553469083026425223082533446850352619311881710100031378387528865875332083814206171776691473035982534904287554687311595628638823537875937519577818577805321712268066130019278766111959092164201989380952572010654858632789", Nn = { precision: 20, rounding: 4, modulo: 1, toExpNeg: -7, toExpPos: 21, minE: -pn, maxE: pn, crypto: !1 }, bn = !0, xn = "[DecimalError] ", En = xn + "Invalid argument: ", Mn = xn + "Precision limit exceeded", yn = xn + "crypto unavailable", qn = Math.floor, On = Math.pow, Fn = /^0b([01]+(\.[01]*)?|\.[01]+)(p[+-]?\d+)?$/i, An = /^0x([0-9a-f]+(\.[0-9a-f]*)?|\.[0-9a-f]+)(p[+-]?\d+)?$/i, Dn = /^0o([0-7]+(\.[0-7]*)?|\.[0-7]+)(p[+-]?\d+)?$/i, Zn = /^(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i, Pn = 1e7, Rn = 7, Ln = 9007199254740991, Un = mn.length - 1, _n = vn.length - 1, kn = {}; kn.absoluteValue = kn.abs = function () { var n = new this.constructor(this); return n.s < 0 && (n.s = 1), o(n) }, kn.ceil = function () { return o(new this.constructor(this), this.e + 1, 2) }, kn.comparedTo = kn.cmp = function (n) { var e, i, t, r, s = this, o = s.d, u = (n = new s.constructor(n)).d, c = s.s, f = n.s; if (!o || !u) return c && f ? c !== f ? c : o === u ? 0 : !o ^ 0 > c ? 1 : -1 : NaN; if (!o[0] || !u[0]) return o[0] ? c : u[0] ? -f : 0; if (c !== f) return c; if (s.e !== n.e) return s.e > n.e ^ 0 > c ? 1 : -1; for (t = o.length, r = u.length, e = 0, i = r > t ? t : r; i > e; ++e) if (o[e] !== u[e]) return o[e] > u[e] ^ 0 > c ? 1 : -1; return t === r ? 0 : t > r ^ 0 > c ? 1 : -1 }, kn.cosine = kn.cos = function () { var n, e, i = this, t = i.constructor; return i.d ? i.d[0] ? (n = t.precision, e = t.rounding, t.precision = n + Math.max(i.e, i.sd()) + Rn, t.rounding = 1, i = s(t, M(t, i)), t.precision = n, t.rounding = e, o(2 == dn || 3 == dn ? i.neg() : i, n, e, !0)) : new t(1) : new t(NaN) }, kn.cubeRoot = kn.cbrt = function () { var n, i, t, r, s, u, c, f, a, h, l = this, d = l.constructor; if (!l.isFinite() || l.isZero()) return new d(l); for (bn = !1, u = l.s * Math.pow(l.s * l, 1 / 3), u && Math.abs(u) != 1 / 0 ? r = new d(u.toString()) : (t = e(l.d), n = l.e, (u = (n - t.length + 1) % 3) && (t += 1 == u || -2 == u ? "0" : "00"), u = Math.pow(t, 1 / 3), n = qn((n + 1) / 3) - (n % 3 == (0 > n ? -1 : 2)), u == 1 / 0 ? t = "5e" + n : (t = u.toExponential(), t = t.slice(0, t.indexOf("e") + 1) + n), r = new d(t), r.s = l.s), c = (n = d.precision) + 3; ;) if (f = r, a = f.times(f).times(f), h = a.plus(l), r = Sn(h.plus(l).times(f), h.plus(a), c + 2, 1), e(f.d).slice(0, c) === (t = e(r.d)).slice(0, c)) { if (t = t.slice(c - 3, c + 1), "9999" != t && (s || "4999" != t)) { (!+t || !+t.slice(1) && "5" == t.charAt(0)) && (o(r, n + 1, 1), i = !r.times(r).times(r).eq(l)); break } if (!s && (o(f, n + 1, 0), f.times(f).times(f).eq(l))) { r = f; break } c += 4, s = 1 } return bn = !0, o(r, n, d.rounding, i) }, kn.decimalPlaces = kn.dp = function () { var n, e = this.d, i = NaN; if (e) { if (n = e.length - 1, i = (n - qn(this.e / Rn)) * Rn, n = e[n]) for (; n % 10 == 0; n /= 10) i--; 0 > i && (i = 0) } return i }, kn.dividedBy = kn.div = function (n) { return Sn(this, new this.constructor(n)) }, kn.dividedToIntegerBy = kn.divToInt = function (n) { var e = this, i = e.constructor; return o(Sn(e, new i(n), 0, 1, 1), i.precision, i.rounding) }, kn.equals = kn.eq = function (n) { return 0 === this.cmp(n) }, kn.floor = function () { return o(new this.constructor(this), this.e + 1, 3) }, kn.greaterThan = kn.gt = function (n) { return this.cmp(n) > 0 }, kn.greaterThanOrEqualTo = kn.gte = function (n) { var e = this.cmp(n); return 1 == e || 0 === e }, kn.hyperbolicCosine = kn.cosh = function () { var n, e, i, t, r, s = this, u = s.constructor, c = new u(1); if (!s.isFinite()) return new u(s.s ? 1 / 0 : NaN); if (s.isZero()) return c; i = u.precision, t = u.rounding, u.precision = i + Math.max(s.e, s.sd()) + 4, u.rounding = 1, r = s.d.length, 32 > r ? (n = Math.ceil(r / 3), e = Math.pow(4, -n).toString()) : (n = 16, e = "2.3283064365386962890625e-10"), s = E(u, 1, s.times(e), new u(1), !0); for (var f, a = n, h = new u(8) ; a--;) f = s.times(s), s = c.minus(f.times(h.minus(f.times(h)))); return o(s, u.precision = i, u.rounding = t, !0) }, kn.hyperbolicSine = kn.sinh = function () { var n, e, i, t, r = this, s = r.constructor; if (!r.isFinite() || r.isZero()) return new s(r); if (e = s.precision, i = s.rounding, s.precision = e + Math.max(r.e, r.sd()) + 4, s.rounding = 1, t = r.d.length, 3 > t) r = E(s, 2, r, r, !0); else { n = 1.4 * Math.sqrt(t), n = n > 16 ? 16 : 0 | n, r = r.times(Math.pow(5, -n)), r = E(s, 2, r, r, !0); for (var u, c = new s(5), f = new s(16), a = new s(20) ; n--;) u = r.times(r), r = r.times(c.plus(u.times(f.times(u).plus(a)))) } return s.precision = e, s.rounding = i, o(r, e, i, !0) }, kn.hyperbolicTangent = kn.tanh = function () { var n, e, i = this, t = i.constructor; return i.isFinite() ? i.isZero() ? new t(i) : (n = t.precision, e = t.rounding, t.precision = n + 7, t.rounding = 1, Sn(i.sinh(), i.cosh(), t.precision = n, t.rounding = e)) : new t(i.s) }, kn.inverseCosine = kn.acos = function () { var n, e = this, i = e.constructor, t = e.abs().cmp(1), r = i.precision, s = i.rounding; return -1 !== t ? 0 === t ? e.isNeg() ? a(i, r, s) : new i(0) : new i(NaN) : e.isZero() ? a(i, r + 4, s).times(.5) : (i.precision = r + 6, i.rounding = 1, e = e.asin(), n = a(i, r + 4, s).times(.5), i.precision = r, i.rounding = s, n.minus(e)) }, kn.inverseHyperbolicCosine = kn.acosh = function () { var n, e, i = this, t = i.constructor; return i.lte(1) ? new t(i.eq(1) ? 0 : NaN) : i.isFinite() ? (n = t.precision, e = t.rounding, t.precision = n + Math.max(Math.abs(i.e), i.sd()) + 4, t.rounding = 1, bn = !1, i = i.times(i).minus(1).sqrt().plus(i), bn = !0, t.precision = n, t.rounding = e, i.ln()) : new t(i) }, kn.inverseHyperbolicSine = kn.asinh = function () { var n, e, i = this, t = i.constructor; return !i.isFinite() || i.isZero() ? new t(i) : (n = t.precision, e = t.rounding, t.precision = n + 2 * Math.max(Math.abs(i.e), i.sd()) + 6, t.rounding = 1, bn = !1, i = i.times(i).plus(1).sqrt().plus(i), bn = !0, t.precision = n, t.rounding = e, i.ln()) }, kn.inverseHyperbolicTangent = kn.atanh = function () { var n, e, i, t, r = this, s = r.constructor; return r.isFinite() ? r.e >= 0 ? new s(r.abs().eq(1) ? r.s / 0 : r.isZero() ? r : NaN) : (n = s.precision, e = s.rounding, t = r.sd(), Math.max(t, n) < 2 * -r.e - 1 ? o(new s(r), n, e, !0) : (s.precision = i = t - r.e, r = Sn(r.plus(1), new s(1).minus(r), i + n, 1), s.precision = n + 4, s.rounding = 1, r = r.ln(), s.precision = n, s.rounding = e, r.times(.5))) : new s(NaN) }, kn.inverseSine = kn.asin = function () { var n, e, i, t, r = this, s = r.constructor; return r.isZero() ? new s(r) : (e = r.abs().cmp(1), i = s.precision, t = s.rounding, -1 !== e ? 0 === e ? (n = a(s, i + 4, t).times(.5), n.s = r.s, n) : new s(NaN) : (s.precision = i + 6, s.rounding = 1, r = r.div(new s(1).minus(r.times(r)).sqrt().plus(1)).atan(), s.precision = i, s.rounding = t, r.times(2))) }, kn.inverseTangent = kn.atan = function () { var n, e, i, t, r, s, u, c, f, h = this, l = h.constructor, d = l.precision, p = l.rounding; if (h.isFinite()) { if (h.isZero()) return new l(h); if (h.abs().eq(1) && _n >= d + 4) return u = a(l, d + 4, p).times(.25), u.s = h.s, u } else { if (!h.s) return new l(NaN); if (_n >= d + 4) return u = a(l, d + 4, p).times(.5), u.s = h.s, u } for (l.precision = c = d + 10, l.rounding = 1, i = Math.min(28, c / Rn + 2 | 0), n = i; n; --n) h = h.div(h.times(h).plus(1).sqrt().plus(1)); for (bn = !1, e = Math.ceil(c / Rn), t = 1, f = h.times(h), u = new l(h), r = h; -1 !== n;) if (r = r.times(f), s = u.minus(r.div(t += 2)), r = r.times(f), u = s.plus(r.div(t += 2)), void 0 !== u.d[e]) for (n = e; u.d[n] === s.d[n] && n--;); return i && (u = u.times(2 << i - 1)), bn = !0, o(u, l.precision = d, l.rounding = p, !0) }, kn.isFinite = function () { return !!this.d }, kn.isInteger = kn.isInt = function () { return !!this.d && qn(this.e / Rn) > this.d.length - 2 }, kn.isNaN = function () { return !this.s }, kn.isNegative = kn.isNeg = function () { return this.s < 0 }, kn.isPositive = kn.isPos = function () { return this.s > 0 }, kn.isZero = function () { return !!this.d && 0 === this.d[0] }, kn.lessThan = kn.lt = function (n) { return this.cmp(n) < 0 }, kn.lessThanOrEqualTo = kn.lte = function (n) { return this.cmp(n) < 1 }, kn.logarithm = kn.log = function (n) { var i, r, s, u, c, a, h, l, d = this, p = d.constructor, g = p.precision, w = p.rounding, v = 5; if (null == n) n = new p(10), i = !0; else { if (n = new p(n), r = n.d, n.s < 0 || !r || !r[0] || n.eq(1)) return new p(NaN); i = n.eq(10) } if (r = d.d, d.s < 0 || !r || !r[0] || d.eq(1)) return new p(r && !r[0] ? -1 / 0 : 1 != d.s ? NaN : r ? 0 : 1 / 0); if (i) if (r.length > 1) c = !0; else { for (u = r[0]; u % 10 === 0;) u /= 10; c = 1 !== u } if (bn = !1, h = g + v, a = m(d, h), s = i ? f(p, h + 10) : m(n, h), l = Sn(a, s, h, 1), t(l.d, u = g, w)) do if (h += 10, a = m(d, h), s = i ? f(p, h + 10) : m(n, h), l = Sn(a, s, h, 1), !c) { +e(l.d).slice(u + 1, u + 15) + 1 == 1e14 && (l = o(l, g + 1, 0)); break } while (t(l.d, u += 10, w)); return bn = !0, o(l, g, w) }, kn.minus = kn.sub = function (n) { var e, i, t, r, s, u, f, a, h, l, d, p, g = this, w = g.constructor; if (n = new w(n), !g.d || !n.d) return g.s && n.s ? g.d ? n.s = -n.s : n = new w(n.d || g.s !== n.s ? g : NaN) : n = new w(NaN), n; if (g.s != n.s) return n.s = -n.s, g.plus(n); if (h = g.d, p = n.d, f = w.precision, a = w.rounding, !h[0] || !p[0]) { if (p[0]) n.s = -n.s; else { if (!h[0]) return new w(3 === a ? -0 : 0); n = new w(g) } return bn ? o(n, f, a) : n } if (i = qn(n.e / Rn), l = qn(g.e / Rn), h = h.slice(), s = l - i) { for (d = 0 > s, d ? (e = h, s = -s, u = p.length) : (e = p, i = l, u = h.length), t = Math.max(Math.ceil(f / Rn), u) + 2, s > t && (s = t, e.length = 1), e.reverse(), t = s; t--;) e.push(0); e.reverse() } else { for (t = h.length, u = p.length, d = u > t, d && (u = t), t = 0; u > t; t++) if (h[t] != p[t]) { d = h[t] < p[t]; break } s = 0 } for (d && (e = h, h = p, p = e, n.s = -n.s), u = h.length, t = p.length - u; t > 0; --t) h[u++] = 0; for (t = p.length; t > s;) { if (h[--t] < p[t]) { for (r = t; r && 0 === h[--r];) h[r] = Pn - 1; --h[r], h[t] += Pn } h[t] -= p[t] } for (; 0 === h[--u];) h.pop(); for (; 0 === h[0]; h.shift())--i; return h[0] ? (n.d = h, n.e = c(h, i), bn ? o(n, f, a) : n) : new w(3 === a ? -0 : 0) }, kn.modulo = kn.mod = function (n) { var e, i = this, t = i.constructor; return n = new t(n), !i.d || !n.s || n.d && !n.d[0] ? new t(NaN) : !n.d || i.d && !i.d[0] ? o(new t(i), t.precision, t.rounding) : (bn = !1, 9 == t.modulo ? (e = Sn(i, n.abs(), 0, 3, 1), e.s *= n.s) : e = Sn(i, n, 0, t.modulo, 1), e = e.times(n), bn = !0, i.minus(e)) }, kn.naturalExponential = kn.exp = function () { return w(this) }, kn.naturalLogarithm = kn.ln = function () { return m(this) }, kn.negated = kn.neg = function () { var n = new this.constructor(this); return n.s = -n.s, o(n) }, kn.plus = kn.add = function (n) { var e, i, t, r, s, u, f, a, h, l, d = this, p = d.constructor; if (n = new p(n), !d.d || !n.d) return d.s && n.s ? d.d || (n = new p(n.d || d.s === n.s ? d : NaN)) : n = new p(NaN), n; if (d.s != n.s) return n.s = -n.s, d.minus(n); if (h = d.d, l = n.d, f = p.precision, a = p.rounding, !h[0] || !l[0]) return l[0] || (n = new p(d)), bn ? o(n, f, a) : n; if (s = qn(d.e / Rn), t = qn(n.e / Rn), h = h.slice(), r = s - t) { for (0 > r ? (i = h, r = -r, u = l.length) : (i = l, t = s, u = h.length), s = Math.ceil(f / Rn), u = s > u ? s + 1 : u + 1, r > u && (r = u, i.length = 1), i.reverse() ; r--;) i.push(0); i.reverse() } for (u = h.length, r = l.length, 0 > u - r && (r = u, i = l, l = h, h = i), e = 0; r;) e = (h[--r] = h[r] + l[r] + e) / Pn | 0, h[r] %= Pn; for (e && (h.unshift(e), ++t), u = h.length; 0 == h[--u];) h.pop(); return n.d = h, n.e = c(h, t), bn ? o(n, f, a) : n }, kn.precision = kn.sd = function (n) { var e, i = this; if (void 0 !== n && n !== !!n && 1 !== n && 0 !== n) throw Error(En + n); return i.d ? (e = h(i.d), n && i.e + 1 > e && (e = i.e + 1)) : e = NaN, e }, kn.round = function () { var n = this, e = n.constructor; return o(new e(n), n.e + 1, e.rounding) }, kn.sine = kn.sin = function () { var n, e, i = this, t = i.constructor; return i.isFinite() ? i.isZero() ? new t(i) : (n = t.precision, e = t.rounding, t.precision = n + Math.max(i.e, i.sd()) + Rn, t.rounding = 1, i = x(t, M(t, i)), t.precision = n, t.rounding = e, o(dn > 2 ? i.neg() : i, n, e, !0)) : new t(NaN) }, kn.squareRoot = kn.sqrt = function () { var n, i, t, r, s, u, c = this, f = c.d, a = c.e, h = c.s, l = c.constructor; if (1 !== h || !f || !f[0]) return new l(!h || 0 > h && (!f || f[0]) ? NaN : f ? c : 1 / 0); for (bn = !1, h = Math.sqrt(+c), 0 == h || h == 1 / 0 ? (i = e(f), (i.length + a) % 2 == 0 && (i += "0"), h = Math.sqrt(i), a = qn((a + 1) / 2) - (0 > a || a % 2), h == 1 / 0 ? i = "1e" + a : (i = h.toExponential(), i = i.slice(0, i.indexOf("e") + 1) + a), r = new l(i)) : r = new l(h.toString()), t = (a = l.precision) + 3; ;) if (u = r, r = u.plus(Sn(c, u, t + 2, 1)).times(.5), e(u.d).slice(0, t) === (i = e(r.d)).slice(0, t)) { if (i = i.slice(t - 3, t + 1), "9999" != i && (s || "4999" != i)) { (!+i || !+i.slice(1) && "5" == i.charAt(0)) && (o(r, a + 1, 1), n = !r.times(r).eq(c)); break } if (!s && (o(u, a + 1, 0), u.times(u).eq(c))) { r = u; break } t += 4, s = 1 } return bn = !0, o(r, a, l.rounding, n) }, kn.tangent = kn.tan = function () { var n, e, i = this, t = i.constructor; return i.isFinite() ? i.isZero() ? new t(i) : (n = t.precision, e = t.rounding, t.precision = n + 10, t.rounding = 1, i = i.sin(), i.s = 1, i = Sn(i, new t(1).minus(i.times(i)).sqrt(), n + 10, 0), t.precision = n, t.rounding = e, o(2 == dn || 4 == dn ? i.neg() : i, n, e, !0)) : new t(NaN) }, kn.times = kn.mul = function (n) { var e, i, t, r, s, u, f, a, h, l = this, d = l.constructor, p = l.d, g = (n = new d(n)).d; if (n.s *= l.s, !(p && p[0] && g && g[0])) return new d(!n.s || p && !p[0] && !g || g && !g[0] && !p ? NaN : p && g ? 0 * n.s : n.s / 0); for (i = qn(l.e / Rn) + qn(n.e / Rn), a = p.length, h = g.length, h > a && (s = p, p = g, g = s, u = a, a = h, h = u), s = [], u = a + h, t = u; t--;) s.push(0); for (t = h; --t >= 0;) { for (e = 0, r = a + t; r > t;) f = s[r] + g[t] * p[r - t - 1] + e, s[r--] = f % Pn | 0, e = f / Pn | 0; s[r] = (s[r] + e) % Pn | 0 } for (; !s[--u];) s.pop(); for (e ? ++i : s.shift(), t = s.length; !s[--t];) s.pop(); return n.d = s, n.e = c(s, i), bn ? o(n, d.precision, d.rounding) : n }, kn.toBinary = function (n, e) { return y(this, 2, n, e) }, kn.toDecimalPlaces = kn.toDP = function (n, e) { var t = this, r = t.constructor; return t = new r(t), void 0 === n ? t : (i(n, 0, gn), void 0 === e ? e = r.rounding : i(e, 0, 8), o(t, n + t.e + 1, e)) }, kn.toExponential = function (n, e) { var t, r = this, s = r.constructor; return void 0 === n ? t = u(r, !0) : (i(n, 0, gn), void 0 === e ? e = s.rounding : i(e, 0, 8), r = o(new s(r), n + 1, e), t = u(r, !0, n + 1)), r.isNeg() && !r.isZero() ? "-" + t : t }, kn.toFixed = function (n, e) { var t, r, s = this, c = s.constructor; return void 0 === n ? t = u(s) : (i(n, 0, gn), void 0 === e ? e = c.rounding : i(e, 0, 8), r = o(new c(s), n + s.e + 1, e), t = u(r, !1, n + r.e + 1)), s.isNeg() && !s.isZero() ? "-" + t : t }, kn.toFraction = function (n) { var i, t, r, s, o, u, c, f, a, l, d, p, g = this, w = g.d, m = g.constructor; if (!w) return new m(g); if (a = t = new m(1), r = f = new m(0), i = new m(r), o = i.e = h(w) - g.e - 1, u = o % Rn, i.d[0] = On(10, 0 > u ? Rn + u : u), null == n) n = o > 0 ? i : a; else { if (c = new m(n), !c.isInt() || c.lt(a)) throw Error(En + c); n = c.gt(i) ? o > 0 ? i : a : c } for (bn = !1, c = new m(e(w)), l = m.precision, m.precision = o = w.length * Rn * 2; d = Sn(c, i, 0, 1, 1), s = t.plus(d.times(r)), 1 != s.cmp(n) ;) t = r, r = s, s = a, a = f.plus(d.times(s)), f = s, s = i, i = c.minus(d.times(s)), c = s; return s = Sn(n.minus(t), r, 0, 1, 1), f = f.plus(s.times(a)), t = t.plus(s.times(r)), f.s = a.s = g.s, p = Sn(a, r, o, 1).minus(g).abs().cmp(Sn(f, t, o, 1).minus(g).abs()) < 1 ? [a, r] : [f, t], m.precision = l, bn = !0, p }, kn.toHexadecimal = kn.toHex = function (n, e) { return y(this, 16, n, e) }, kn.toNearest = function (n, e) { var t = this, r = t.constructor; if (t = new r(t), null == n) { if (!t.d) return t; n = new r(1), e = r.rounding } else { if (n = new r(n), void 0 !== e && i(e, 0, 8), !t.d) return n.s ? t : n; if (!n.d) return n.s && (n.s = t.s), n } return n.d[0] ? (bn = !1, 4 > e && (e = [4, 5, 7, 8][e]), t = Sn(t, n, 0, e, 1).times(n), bn = !0, o(t)) : (n.s = t.s, t = n), t }, kn.toNumber = function () { return +this }, kn.toOctal = function (n, e) { return y(this, 8, n, e) }, kn.toPower = kn.pow = function (n) { var i, r, s, u, c, f, a, h = this, l = h.constructor, p = +(n = new l(n)); if (!(h.d && n.d && h.d[0] && n.d[0])) return new l(On(+h, p)); if (h = new l(h), h.eq(1)) return h; if (s = l.precision, c = l.rounding, n.eq(1)) return o(h, s, c); if (i = qn(n.e / Rn), r = n.d.length - 1, a = i >= r, f = h.s, a) { if ((r = 0 > p ? -p : p) <= Ln) return u = d(l, h, r, s), n.s < 0 ? new l(1).div(u) : o(u, s, c) } else if (0 > f) return new l(NaN); return f = 0 > f && 1 & n.d[Math.max(i, r)] ? -1 : 1, r = On(+h, p), i = 0 != r && isFinite(r) ? new l(r + "").e : qn(p * (Math.log("0." + e(h.d)) / Math.LN10 + h.e + 1)), i > l.maxE + 1 || i < l.minE - 1 ? new l(i > 0 ? f / 0 : 0) : (bn = !1, l.rounding = h.s = 1, r = Math.min(12, (i + "").length), u = w(n.times(m(h, s + r)), s), u = o(u, s + 5, 1), t(u.d, s, c) && (i = s + 10, u = o(w(n.times(m(h, i + r)), i), i + 5, 1), +e(u.d).slice(s + 1, s + 15) + 1 == 1e14 && (u = o(u, s + 1, 0))), u.s = f, bn = !0, l.rounding = c, o(u, s, c)) }, kn.toPrecision = function (n, e) { var t, r = this, s = r.constructor; return void 0 === n ? t = u(r, r.e <= s.toExpNeg || r.e >= s.toExpPos) : (i(n, 1, gn), void 0 === e ? e = s.rounding : i(e, 0, 8), r = o(new s(r), n, e), t = u(r, n <= r.e || r.e <= s.toExpNeg, n)), r.isNeg() && !r.isZero() ? "-" + t : t }, kn.toSignificantDigits = kn.toSD = function (n, e) { var t = this, r = t.constructor; return void 0 === n ? (n = r.precision, e = r.rounding) : (i(n, 1, gn), void 0 === e ? e = r.rounding : i(e, 0, 8)), o(new r(t), n, e) }, kn.toString = function () { var n = this, e = n.constructor, i = u(n, n.e <= e.toExpNeg || n.e >= e.toExpPos); return n.isNeg() && !n.isZero() ? "-" + i : i }, kn.truncated = kn.trunc = function () { return o(new this.constructor(this), this.e + 1, 1) }, kn.valueOf = kn.toJSON = function () { var n = this, e = n.constructor, i = u(n, n.e <= e.toExpNeg || n.e >= e.toExpPos); return n.isNeg() ? "-" + i : i }; var Sn = function () { function n(n, e, i) { var t, r = 0, s = n.length; for (n = n.slice() ; s--;) t = n[s] * e + r, n[s] = t % i | 0, r = t / i | 0; return r && n.unshift(r), n } function e(n, e, i, t) { var r, s; if (i != t) s = i > t ? 1 : -1; else for (r = s = 0; i > r; r++) if (n[r] != e[r]) { s = n[r] > e[r] ? 1 : -1; break } return s } function i(n, e, i, t) { for (var r = 0; i--;) n[i] -= r, r = n[i] < e[i] ? 1 : 0, n[i] = r * t + n[i] - e[i]; for (; !n[0] && n.length > 1;) n.shift() } return function (t, r, s, u, c, f) { var a, h, l, d, p, g, w, m, v, N, b, x, E, M, y, q, O, F, A, D, Z = t.constructor, P = t.s == r.s ? 1 : -1, R = t.d, L = r.d; if (!(R && R[0] && L && L[0])) return new Z(t.s && r.s && (R ? !L || R[0] != L[0] : L) ? R && 0 == R[0] || !L ? 0 * P : P / 0 : NaN); for (f ? (p = 1, h = t.e - r.e) : (f = Pn, p = Rn, h = qn(t.e / p) - qn(r.e / p)), A = L.length, O = R.length, v = new Z(P), N = v.d = [], l = 0; L[l] == (R[l] || 0) ; l++); if (L[l] > (R[l] || 0) && h--, null == s ? (M = s = Z.precision, u = Z.rounding) : M = c ? s + (t.e - r.e) + 1 : s, 0 > M) N.push(1), g = !0; else { if (M = M / p + 2 | 0, l = 0, 1 == A) { for (d = 0, L = L[0], M++; (O > l || d) && M--; l++) y = d * f + (R[l] || 0), N[l] = y / L | 0, d = y % L | 0; g = d || O > l } else { for (d = f / (L[0] + 1) | 0, d > 1 && (L = n(L, d, f), R = n(R, d, f), A = L.length, O = R.length), q = A, b = R.slice(0, A), x = b.length; A > x;) b[x++] = 0; D = L.slice(), D.unshift(0), F = L[0], L[1] >= f / 2 && ++F; do d = 0, a = e(L, b, A, x), 0 > a ? (E = b[0], A != x && (E = E * f + (b[1] || 0)), d = E / F | 0, d > 1 ? (d >= f && (d = f - 1), w = n(L, d, f), m = w.length, x = b.length, a = e(w, b, m, x), 1 == a && (d--, i(w, m > A ? D : L, m, f))) : (0 == d && (a = d = 1), w = L.slice()), m = w.length, x > m && w.unshift(0), i(b, w, x, f), -1 == a && (x = b.length, a = e(L, b, A, x), 1 > a && (d++, i(b, x > A ? D : L, x, f))), x = b.length) : 0 === a && (d++, b = [0]), N[l++] = d, a && b[0] ? b[x++] = R[q] || 0 : (b = [R[q]], x = 1); while ((q++ < O || void 0 !== b[0]) && M--); g = void 0 !== b[0] } N[0] || N.shift() } if (1 == p) v.e = h, hn = g; else { for (l = 1, d = N[0]; d >= 10; d /= 10) l++; v.e = l + h * p - 1, o(v, c ? s + v.e + 1 : s, u, g) } return v } }(); Nn = I(Nn), mn = new Nn(mn), vn = new Nn(vn), Bridge.$Decimal = Nn, "function" == typeof define && define.amd ? define("decimal.js", function () { return Nn }) : "undefined" != typeof module && module.exports ? module.exports = Nn["default"] = Nn.Decimal = Nn : (n || (n = "undefined" != typeof self && self && self.self == self ? self : Function("return this")()), ln = n.Decimal, Nn.noConflict = function () { return n.Decimal = ln, Nn }/*, n.Decimal = Nn*/) }(Bridge.global);
 
     System.Decimal = function (v, provider, T) {
         if (this.constructor !== System.Decimal) {
@@ -10250,7 +10328,7 @@
                 if (isUTC === true) {
                     dt.setUTCHours(0);
                     dt.setUTCMinutes(0);
-                    dt.setUTCMinutes(0);
+                    dt.setUTCSeconds(0);
                     dt.setUTCMilliseconds(0);
                 } else {
                     dt.setHours(0);
@@ -10429,6 +10507,44 @@
 
             lte: function (a, b) {
                 return Bridge.hasValue$1(a, b) ? (a.ticks.lte(b.ticks)) : false;
+            },
+
+            timeSpanWithDays: /^(\-)?(\d+)[\.|:](\d+):(\d+):(\d+)(\.\d+)?/,
+            timeSpanNoDays: /^(\-)?(\d+):(\d+):(\d+)(\.\d+)?/,
+
+            parse: function(value) {
+                var match,
+                    milliseconds;
+
+                function parseMilliseconds(value) {
+                    return value ? parseFloat('0' + value) * 1000 : 0;
+                }
+
+                if ((match = value.match(System.TimeSpan.timeSpanWithDays))) {
+                    var ts = new System.TimeSpan(match[2], match[3], match[4], match[5], parseMilliseconds(match[6]));
+
+                    return match[1] ? new System.TimeSpan(ts.ticks.neg()) : ts;
+                }
+
+                if ((match = value.match(System.TimeSpan.timeSpanNoDays))) {
+                    var ts = new System.TimeSpan(0, match[2], match[3], match[4], parseMilliseconds(match[5]));
+
+                    return match[1] ? new System.TimeSpan(ts.ticks.neg()) : ts;
+                }
+
+                return null;
+            },
+
+            tryParse: function (value, provider, result) {
+                result.v = this.parse(value);
+
+                if (result.v == null) {
+                    result.v = this.minValue;
+
+                    return false;
+                }
+
+                return true;
             }
         },
 
@@ -11143,7 +11259,7 @@
                 },
                 ShowAssertDialog: function (stackTrace, message, detailMessage) {
                     if (System.Diagnostics.Debugger.IsAttached) {
-                        System.Diagnostics.Debugger.Break();
+                        debugger;
                     } else {
                         var ex = new System.Diagnostics.Debug.DebugAssertException(message, detailMessage, stackTrace);
                         System.Environment.FailFast$1(ex.Message, ex);
@@ -11193,9 +11309,6 @@
                 }
             },
             methods: {
-                Break: function () {
-                    debugger;
-                },
                 IsLogging: function () {
                     return true;
                 },
@@ -11281,7 +11394,7 @@
         }
     });
 
-    if (typeof (window) !== "undefined" && window.performance && window.performance.now) {
+if (typeof window !== 'undefined' && window.performance && window.performance.now) {
         System.Diagnostics.Stopwatch.frequency = new System.Int64(1e6);
         System.Diagnostics.Stopwatch.isHighResolution = true;
         System.Diagnostics.Stopwatch.getTimestamp = function () {
@@ -11774,8 +11887,12 @@
         },
 
         checkReadOnly: function (obj, T, msg) {
-            if (System.Array.getIsReadOnly(obj, T)) {
-                throw new System.NotSupportedException.$ctor1(msg || "Collection was of a fixed size.");
+            if (Bridge.isArray(obj)) {
+                if (T) {
+                    throw new System.NotSupportedException.$ctor1(msg || "Collection was of a fixed size.");
+                }
+            } else if (System.Array.getIsReadOnly(obj, T)) {
+                throw new System.NotSupportedException.$ctor1(msg || "Collection is read-only.");
             }
         },
 
@@ -12856,6 +12973,13 @@
         $kind: "interface"
     });
 
+    // @source IDictionaryEnumerator.js
+
+    Bridge.define("System.Collections.IDictionaryEnumerator", {
+        inherits: [System.Collections.IEnumerator],
+        $kind: "interface"
+    });
+
     // @source IEqualityComparer.js
 
     Bridge.define("System.Collections.IEqualityComparer", {
@@ -13789,7 +13913,7 @@
                 }
 
                 try {
-                    this.setItem(index, Bridge.cast(Bridge.unbox(value), T));
+                    this.setItem(index, Bridge.cast(Bridge.unbox(value, T), T));
                 }
                 catch ($e1) {
                     $e1 = System.Exception.create($e1);
@@ -13813,7 +13937,7 @@
                 }
 
                 try {
-                    this.add(Bridge.cast(Bridge.unbox(item), T));
+                    this.add(Bridge.cast(Bridge.unbox(item, T), T));
                 }
                 catch ($e1) {
                     $e1 = System.Exception.create($e1);
@@ -13878,7 +14002,7 @@
             },
             System$Collections$IList$contains: function (item) {
                 if (System.Collections.Generic.List$1(T).IsCompatibleObject(item)) {
-                    return this.contains(Bridge.cast(Bridge.unbox(item), T));
+                    return this.contains(Bridge.cast(Bridge.unbox(item, T), T));
                 }
                 return false;
             },
@@ -14076,7 +14200,7 @@
             },
             System$Collections$IList$indexOf: function (item) {
                 if (System.Collections.Generic.List$1(T).IsCompatibleObject(item)) {
-                    return this.indexOf(Bridge.cast(Bridge.unbox(item), T));
+                    return this.indexOf(Bridge.cast(Bridge.unbox(item, T), T));
                 }
                 return -1;
             },
@@ -14117,7 +14241,7 @@
                 }
 
                 try {
-                    this.insert(index, Bridge.cast(Bridge.unbox(item), T));
+                    this.insert(index, Bridge.cast(Bridge.unbox(item, T), T));
                 }
                 catch ($e1) {
                     $e1 = System.Exception.create($e1);
@@ -14220,7 +14344,7 @@
             },
             System$Collections$IList$remove: function (item) {
                 if (System.Collections.Generic.List$1(T).IsCompatibleObject(item)) {
-                    this.remove(Bridge.cast(Bridge.unbox(item), T));
+                    this.remove(Bridge.cast(Bridge.unbox(item, T), T));
                 }
             },
             RemoveAll: function (match) {
@@ -14643,11 +14767,21 @@
                     throw new System.ArgumentNullException.$ctor1("format");
                 }
 
+                var reverse = function (s) {
+                    return s.split("").reverse().join("");
+                };
+
+                format = reverse(reverse(format.replace(/\{\{/g, function (m) {
+                    return String.fromCharCode(1, 1);
+                })).replace(/\}\}/g, function (m) {
+                    return String.fromCharCode(2, 2);
+                }));
+
                 var me = this,
                     _formatRe = /(\{+)((\d+|[a-zA-Z_$]\w+(?:\.[a-zA-Z_$]\w+|\[\d+\])*)(?:\,(-?\d*))?(?:\:([^\}]*))?)(\}+)|(\{+)|(\}+)/g,
                     fn = this.decodeBraceSequence;
 
-                return format.replace(_formatRe, function (m, openBrace, elementContent, index, align, format, closeBrace, repeatOpenBrace, repeatCloseBrace) {
+                format = format.replace(_formatRe, function (m, openBrace, elementContent, index, align, format, closeBrace, repeatOpenBrace, repeatCloseBrace) {
                     if (repeatOpenBrace) {
                         return fn(repeatOpenBrace);
                     }
@@ -14661,6 +14795,16 @@
                     }
 
                     return fn(openBrace, true) + me.handleElement(provider, index, align, format, args) + fn(closeBrace, true);
+                });
+
+                return format.replace(/(\x01\x01)|(\x02\x02)/g, function (m) {
+                    if (m == String.fromCharCode(1, 1)) {
+                        return "{";
+                    }
+
+                    if (m == String.fromCharCode(2, 2)) {
+                        return "}";
+                    }
                 });
             },
 
@@ -14764,9 +14908,7 @@
                     return false;
                 }
 
-                prefix = System.String.escape(prefix);
-
-                return str.match("^" + prefix) !== null;
+                return System.String.equals(str.slice(0, prefix.length), prefix, arguments[2]);
             },
 
             endsWith: function (str, suffix) {
@@ -14778,9 +14920,7 @@
                     return false;
                 }
 
-                suffix = System.String.escape(suffix);
-
-                return str.match(suffix + "$") !== null;
+                return System.String.equals(str.slice(str.length - suffix.length, str.length), suffix, arguments[2]);
             },
 
             contains: function (str, value) {
@@ -14880,6 +15020,16 @@
 
             equals: function () {
                 return System.String.compare.apply(this, arguments) === 0;
+            },
+
+            swapCase: function (letters) {
+                return letters.replace(/\w/g, function (c) {
+                    if (c === c.toLowerCase()) {
+                        return c.toUpperCase();
+                    } else {
+                        return c.toLowerCase();
+                    }
+                });
             },
 
             compare: function (strA, strB) {
@@ -15097,7 +15247,7 @@
 
         config: {
             alias: [
-                "Dispose", "System$IDisposable$Dispose"
+                "dispose", "System$IDisposable$Dispose"
             ]
         },
 
@@ -15453,7 +15603,7 @@
             return this._getResult(false);
         },
 
-        Dispose: function () {},
+        dispose: function () {},
 
         getAwaiter: function () {
             return this;
@@ -15535,7 +15685,7 @@
 
         config: {
             alias: [
-                "Dispose", "System$IDisposable$Dispose"
+                "dispose", "System$IDisposable$Dispose"
             ]
         },
 
@@ -15613,7 +15763,7 @@
             }
         },
 
-        Dispose: function () {
+        dispose: function () {
             this.clean();
         },
 
@@ -15627,7 +15777,7 @@
 
             if (this.links) {
                 for (var i = 0; i < this.links.length; i++) {
-                    this.links[i].Dispose();
+                    this.links[i].dispose();
                 }
 
                 this.links = null;
@@ -15727,7 +15877,7 @@
 
         config: {
             alias: [
-                "Dispose", "System$IDisposable$Dispose"
+                "dispose", "System$IDisposable$Dispose"
             ]
         },
 
@@ -15737,7 +15887,7 @@
             this.o = o;
         },
 
-        Dispose: function () {
+        dispose: function () {
             if (this.cts) {
                 this.cts.deregister(this.o);
                 this.cts = this.o = null;
@@ -15880,8 +16030,7 @@
                     throw new System.ArgumentNullException.$ctor1("element");
                 }
 
-                if (t == null)
-                {
+                if (t == null) {
                     throw new System.ArgumentNullException.$ctor1("attributeType");
                 }
 
@@ -15899,12 +16048,17 @@
                     throw new System.ArgumentNullException.$ctor1("element");
                 }
 
-                if (t == null)
-                {
+                if (t == null) {
                     throw new System.ArgumentNullException.$ctor1("attributeType");
                 }
 
                 return a.getCustomAttributes(t || b);
+            },
+
+            isDefined: function (o, t, b) {
+                var attrs = System.Attribute.getCustomAttributes(o, t, b);
+
+                return attrs.length > 0;
             }
         }
     });
@@ -20594,11 +20748,32 @@
     };
 
     // private
+    var defaultComparer = {
+        compare: function (x, y) {
+            if (!Bridge.hasValue(x)) {
+                return !Bridge.hasValue(y) ? 0 : -1;
+            } else if (!Bridge.hasValue(y)) {
+                return 1;
+            }
 
+            if (typeof x == "string" && typeof y == "string") {
+                var result = System.String.compare(x, y, true);
+
+                if (result !== 0) {
+                    return result;
+                }
+
+                x = System.String.swapCase(x);
+                y = System.String.swapCase(y);
+            }
+
+            return Bridge.compare(x, y);
+        }
+    };
     var OrderedEnumerable = function (source, keySelector, comparer, descending, parent) {
         this.source = source;
         this.keySelector = Utils.createLambda(keySelector);
-        this.comparer = comparer || System.Collections.Generic.Comparer$1.$default;
+        this.comparer = comparer || defaultComparer;
         this.descending = descending;
         this.parent = parent;
     };
@@ -20983,6 +21158,312 @@
     System.Linq.OrderedEnumerable$1 = OrderedEnumerable;
 })(Bridge.global);
 
+    // @source CollectionDataContractAttribute.js
+
+    Bridge.define("System.Runtime.Serialization.CollectionDataContractAttribute", {
+        inherits: [System.Attribute],
+        fields: {
+            _name: null,
+            _ns: null,
+            _itemName: null,
+            _keyName: null,
+            _valueName: null,
+            _isReference: false,
+            _isNameSetExplicitly: false,
+            _isNamespaceSetExplicitly: false,
+            _isReferenceSetExplicitly: false,
+            _isItemNameSetExplicitly: false,
+            _isKeyNameSetExplicitly: false,
+            _isValueNameSetExplicitly: false
+        },
+        props: {
+            Namespace: {
+                get: function () {
+                    return this._ns;
+                },
+                set: function (value) {
+                    this._ns = value;
+                    this._isNamespaceSetExplicitly = true;
+                }
+            },
+            IsNamespaceSetExplicitly: {
+                get: function () {
+                    return this._isNamespaceSetExplicitly;
+                }
+            },
+            Name: {
+                get: function () {
+                    return this._name;
+                },
+                set: function (value) {
+                    this._name = value;
+                    this._isNameSetExplicitly = true;
+                }
+            },
+            IsNameSetExplicitly: {
+                get: function () {
+                    return this._isNameSetExplicitly;
+                }
+            },
+            ItemName: {
+                get: function () {
+                    return this._itemName;
+                },
+                set: function (value) {
+                    this._itemName = value;
+                    this._isItemNameSetExplicitly = true;
+                }
+            },
+            IsItemNameSetExplicitly: {
+                get: function () {
+                    return this._isItemNameSetExplicitly;
+                }
+            },
+            KeyName: {
+                get: function () {
+                    return this._keyName;
+                },
+                set: function (value) {
+                    this._keyName = value;
+                    this._isKeyNameSetExplicitly = true;
+                }
+            },
+            IsReference: {
+                get: function () {
+                    return this._isReference;
+                },
+                set: function (value) {
+                    this._isReference = value;
+                    this._isReferenceSetExplicitly = true;
+                }
+            },
+            IsReferenceSetExplicitly: {
+                get: function () {
+                    return this._isReferenceSetExplicitly;
+                }
+            },
+            IsKeyNameSetExplicitly: {
+                get: function () {
+                    return this._isKeyNameSetExplicitly;
+                }
+            },
+            ValueName: {
+                get: function () {
+                    return this._valueName;
+                },
+                set: function (value) {
+                    this._valueName = value;
+                    this._isValueNameSetExplicitly = true;
+                }
+            },
+            IsValueNameSetExplicitly: {
+                get: function () {
+                    return this._isValueNameSetExplicitly;
+                }
+            }
+        },
+        ctors: {
+            ctor: function () {
+                this.$initialize();
+                System.Attribute.ctor.call(this);
+            }
+        }
+    });
+
+    // @source ContractNamespaceAttribute.js
+
+    Bridge.define("System.Runtime.Serialization.ContractNamespaceAttribute", {
+        inherits: [System.Attribute],
+        fields: {
+            _clrNamespace: null,
+            _contractNamespace: null
+        },
+        props: {
+            ClrNamespace: {
+                get: function () {
+                    return this._clrNamespace;
+                },
+                set: function (value) {
+                    this._clrNamespace = value;
+                }
+            },
+            ContractNamespace: {
+                get: function () {
+                    return this._contractNamespace;
+                }
+            }
+        },
+        ctors: {
+            ctor: function (contractNamespace) {
+                this.$initialize();
+                System.Attribute.ctor.call(this);
+                this._contractNamespace = contractNamespace;
+            }
+        }
+    });
+
+    // @source DataContractAttribute.js
+
+    Bridge.define("System.Runtime.Serialization.DataContractAttribute", {
+        inherits: [System.Attribute],
+        fields: {
+            _name: null,
+            _ns: null,
+            _isNameSetExplicitly: false,
+            _isNamespaceSetExplicitly: false,
+            _isReference: false,
+            _isReferenceSetExplicitly: false
+        },
+        props: {
+            IsReference: {
+                get: function () {
+                    return this._isReference;
+                },
+                set: function (value) {
+                    this._isReference = value;
+                    this._isReferenceSetExplicitly = true;
+                }
+            },
+            IsReferenceSetExplicitly: {
+                get: function () {
+                    return this._isReferenceSetExplicitly;
+                }
+            },
+            Namespace: {
+                get: function () {
+                    return this._ns;
+                },
+                set: function (value) {
+                    this._ns = value;
+                    this._isNamespaceSetExplicitly = true;
+                }
+            },
+            IsNamespaceSetExplicitly: {
+                get: function () {
+                    return this._isNamespaceSetExplicitly;
+                }
+            },
+            Name: {
+                get: function () {
+                    return this._name;
+                },
+                set: function (value) {
+                    this._name = value;
+                    this._isNameSetExplicitly = true;
+                }
+            },
+            IsNameSetExplicitly: {
+                get: function () {
+                    return this._isNameSetExplicitly;
+                }
+            }
+        },
+        ctors: {
+            ctor: function () {
+                this.$initialize();
+                System.Attribute.ctor.call(this);
+            }
+        }
+    });
+
+    // @source DataMemberAttribute.js
+
+    Bridge.define("System.Runtime.Serialization.DataMemberAttribute", {
+        inherits: [System.Attribute],
+        fields: {
+            _name: null,
+            _isNameSetExplicitly: false,
+            _order: 0,
+            _isRequired: false,
+            _emitDefaultValue: false
+        },
+        props: {
+            Name: {
+                get: function () {
+                    return this._name;
+                },
+                set: function (value) {
+                    this._name = value;
+                    this._isNameSetExplicitly = true;
+                }
+            },
+            IsNameSetExplicitly: {
+                get: function () {
+                    return this._isNameSetExplicitly;
+                }
+            },
+            Order: {
+                get: function () {
+                    return this._order;
+                },
+                set: function (value) {
+                    if (value < 0) {
+                        throw new System.Runtime.Serialization.InvalidDataContractException.$ctor1("Property 'Order' in DataMemberAttribute attribute cannot be a negative number.");
+                    }
+                    this._order = value;
+                }
+            },
+            IsRequired: {
+                get: function () {
+                    return this._isRequired;
+                },
+                set: function (value) {
+                    this._isRequired = value;
+                }
+            },
+            EmitDefaultValue: {
+                get: function () {
+                    return this._emitDefaultValue;
+                },
+                set: function (value) {
+                    this._emitDefaultValue = value;
+                }
+            }
+        },
+        ctors: {
+            init: function () {
+                this._order = -1;
+                this._emitDefaultValue = true;
+            },
+            ctor: function () {
+                this.$initialize();
+                System.Attribute.ctor.call(this);
+            }
+        }
+    });
+
+    // @source EnumMemberAttribute.js
+
+    Bridge.define("System.Runtime.Serialization.EnumMemberAttribute", {
+        inherits: [System.Attribute],
+        fields: {
+            _value: null,
+            _isValueSetExplicitly: false
+        },
+        props: {
+            Value: {
+                get: function () {
+                    return this._value;
+                },
+                set: function (value) {
+                    this._value = value;
+                    this._isValueSetExplicitly = true;
+                }
+            },
+            IsValueSetExplicitly: {
+                get: function () {
+                    return this._isValueSetExplicitly;
+                }
+            }
+        },
+        ctors: {
+            ctor: function () {
+                this.$initialize();
+                System.Attribute.ctor.call(this);
+            }
+        }
+    });
+
     // @source IDeserializationCallback.js
 
     Bridge.define("System.Runtime.Serialization.IDeserializationCallback", {
@@ -20993,6 +21474,38 @@
 
     Bridge.define("System.Runtime.Serialization.IFormatterConverter", {
         $kind: "interface"
+    });
+
+    // @source IgnoreDataMemberAttribute.js
+
+    Bridge.define("System.Runtime.Serialization.IgnoreDataMemberAttribute", {
+        inherits: [System.Attribute],
+        ctors: {
+            ctor: function () {
+                this.$initialize();
+                System.Attribute.ctor.call(this);
+            }
+        }
+    });
+
+    // @source InvalidDataContractException.js
+
+    Bridge.define("System.Runtime.Serialization.InvalidDataContractException", {
+        inherits: [System.Exception],
+        ctors: {
+            ctor: function () {
+                this.$initialize();
+                System.Exception.ctor.call(this);
+            },
+            $ctor1: function (message) {
+                this.$initialize();
+                System.Exception.ctor.call(this, message);
+            },
+            $ctor2: function (message, innerException) {
+                this.$initialize();
+                System.Exception.ctor.call(this, message, innerException);
+            }
+        }
     });
 
     // @source IObjectReference.js
@@ -21011,6 +21524,50 @@
 
     Bridge.define("System.Runtime.Serialization.ISerializable", {
         $kind: "interface"
+    });
+
+    // @source ISerializationSurrogateProvider.js
+
+    Bridge.define("System.Runtime.Serialization.ISerializationSurrogateProvider", {
+        $kind: "interface"
+    });
+
+    // @source KnownTypeAttribute.js
+
+    Bridge.define("System.Runtime.Serialization.KnownTypeAttribute", {
+        inherits: [System.Attribute],
+        fields: {
+            _methodName: null,
+            _type: null
+        },
+        props: {
+            MethodName: {
+                get: function () {
+                    return this._methodName;
+                }
+            },
+            Type: {
+                get: function () {
+                    return this._type;
+                }
+            }
+        },
+        ctors: {
+            ctor: function () {
+                this.$initialize();
+                System.Attribute.ctor.call(this);
+            },
+            $ctor2: function (type) {
+                this.$initialize();
+                System.Attribute.ctor.call(this);
+                this._type = type;
+            },
+            $ctor1: function (methodName) {
+                this.$initialize();
+                System.Attribute.ctor.call(this);
+                this._methodName = methodName;
+            }
+        }
     });
 
     // @source SerializationEntry.js
@@ -21238,7 +21795,7 @@
                 if (!(Bridge.is(obj, System.Runtime.Serialization.StreamingContext))) {
                     return false;
                 }
-                var ctx = System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj), System.Runtime.Serialization.StreamingContext));
+                var ctx = System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj, System.Runtime.Serialization.StreamingContext), System.Runtime.Serialization.StreamingContext));
                 return Bridge.referenceEquals(ctx._additionalContext, this._additionalContext) && ctx._state === this._state;
             },
             getHashCode: function () {
@@ -21271,6 +21828,30 @@
             }
         },
         $flags: true
+    });
+
+    // @source OnSerializingAttribute.js
+
+    Bridge.define("System.Runtime.Serialization.OnSerializingAttribute", {
+        inherits: [System.Attribute]
+    });
+
+    // @source OnSerializedAttribute.js
+
+    Bridge.define("System.Runtime.Serialization.OnSerializedAttribute", {
+        inherits: [System.Attribute]
+    });
+
+    // @source OnDeserializingAttribute.js
+
+    Bridge.define("System.Runtime.Serialization.OnDeserializingAttribute", {
+        inherits: [System.Attribute]
+    });
+
+    // @source OnDeserializedAttribute.js
+
+    Bridge.define("System.Runtime.Serialization.OnDeserializedAttribute", {
+        inherits: [System.Attribute]
     });
 
     // @source SecurityException.js
@@ -21390,6 +21971,7 @@
         ctors: {
             ctor: function (exception, isTerminating) {
                 this.$initialize();
+                System.Object.call(this);
                 this._exception = exception;
                 this._isTerminating = isTerminating;
             }
@@ -30125,12 +30707,14 @@
         statics: {
             fields: {
                 HashPrime: 0,
+                RandomSeed: 0,
                 primes: null,
                 MaxPrimeArrayLength: 0
             },
             ctors: {
                 init: function () {
                     this.HashPrime = 101;
+                    this.RandomSeed = System.Guid.NewGuid().getHashCode();
                     this.primes = System.Array.init([
                         3, 
                         7, 
@@ -30209,6 +30793,10 @@
                 }
             },
             methods: {
+                Combine: function (h1, h2) {
+                    var rol5 = (((((h1 >>> 0) << 5) >>> 0)) | ((h1 >>> 0) >>> 27)) >>> 0;
+                    return ((((rol5 | 0) + h1) | 0)) ^ h2;
+                },
                 IsPrime: function (candidate) {
                     if ((candidate & 1) !== 0) {
                         var limit = Bridge.Int.clip32(Math.sqrt(candidate));
@@ -30310,7 +30898,7 @@
                 get: function () {
                     var list = Bridge.as(this.items, System.Collections.IList);
                     if (list != null) {
-                        return list.System$Collections$IList$IsFixedSize;
+                        return System.Array.isFixedSize(list);
                     }
                     return System.Array.getIsReadOnly(this.items, T);
                 }
@@ -30372,7 +30960,7 @@
                 System.ThrowHelper.IfNullAndNullsAreIllegalThenThrow(T, value, System.ExceptionArgument.value);
 
                 try {
-                    this.setItem(index, Bridge.cast(Bridge.unbox(value), T));
+                    this.setItem(index, Bridge.cast(Bridge.unbox(value, T), T));
                 }
                 catch ($e1) {
                     $e1 = System.Exception.create($e1);
@@ -30398,7 +30986,7 @@
                 System.ThrowHelper.IfNullAndNullsAreIllegalThenThrow(T, value, System.ExceptionArgument.value);
 
                 try {
-                    this.add(Bridge.cast(Bridge.unbox(value), T));
+                    this.add(Bridge.cast(Bridge.unbox(value, T), T));
                 }
                 catch ($e1) {
                     $e1 = System.Exception.create($e1);
@@ -30478,7 +31066,7 @@
             },
             System$Collections$IList$contains: function (value) {
                 if (System.Collections.ObjectModel.Collection$1(T).IsCompatibleObject(value)) {
-                    return this.contains(Bridge.cast(Bridge.unbox(value), T));
+                    return this.contains(Bridge.cast(Bridge.unbox(value, T), T));
                 }
                 return false;
             },
@@ -30493,7 +31081,7 @@
             },
             System$Collections$IList$indexOf: function (value) {
                 if (System.Collections.ObjectModel.Collection$1(T).IsCompatibleObject(value)) {
-                    return this.indexOf(Bridge.cast(Bridge.unbox(value), T));
+                    return this.indexOf(Bridge.cast(Bridge.unbox(value, T), T));
                 }
                 return -1;
             },
@@ -30515,7 +31103,7 @@
                 System.ThrowHelper.IfNullAndNullsAreIllegalThenThrow(T, value, System.ExceptionArgument.value);
 
                 try {
-                    this.insert(index, Bridge.cast(Bridge.unbox(value), T));
+                    this.insert(index, Bridge.cast(Bridge.unbox(value, T), T));
                 }
                 catch ($e1) {
                     $e1 = System.Exception.create($e1);
@@ -30544,7 +31132,7 @@
                 }
 
                 if (System.Collections.ObjectModel.Collection$1(T).IsCompatibleObject(value)) {
-                    this.remove(Bridge.cast(Bridge.unbox(value), T));
+                    this.remove(Bridge.cast(Bridge.unbox(value, T), T));
                 }
             },
             removeAt: function (index) {
@@ -30672,7 +31260,7 @@
             },
             System$Collections$IList$contains: function (value) {
                 if (System.Collections.ObjectModel.ReadOnlyCollection$1(T).IsCompatibleObject(value)) {
-                    return this.contains(Bridge.cast(Bridge.unbox(value), T));
+                    return this.contains(Bridge.cast(Bridge.unbox(value, T), T));
                 }
                 return false;
             },
@@ -30732,7 +31320,7 @@
             },
             System$Collections$IList$indexOf: function (value) {
                 if (System.Collections.ObjectModel.ReadOnlyCollection$1(T).IsCompatibleObject(value)) {
-                    return this.indexOf(Bridge.cast(Bridge.unbox(value), T));
+                    return this.indexOf(Bridge.cast(Bridge.unbox(value, T), T));
                 }
                 return -1;
             },
@@ -31352,26 +31940,13 @@
             $ctor1: function (dateTime) {
                 this.$initialize();
                 var offset;
-                if (System.DateTime.getKind(dateTime) !== 1) {
-                    offset = System.DateTime.subdd(System.DateTime.getNow(), System.DateTime.getUtcNow());
 
-                } else {
-                    offset = new System.TimeSpan(System.Int64(0));
-                }
+                offset = new System.TimeSpan(System.Int64(0));
                 this.m_offsetMinutes = System.DateTimeOffset.ValidateOffset(offset);
                 this.m_dateTime = System.DateTimeOffset.ValidateDate(dateTime, offset);
             },
             $ctor2: function (dateTime, offset) {
                 this.$initialize();
-                if (System.DateTime.getKind(dateTime) === 2) {
-                    if (System.TimeSpan.neq(offset, (System.DateTime.subdd(System.DateTime.getNow(), System.DateTime.getUtcNow())))) {
-                        throw new System.ArgumentException.$ctor3(System.Environment.GetResourceString("Argument_OffsetLocalMismatch"), "offset");
-                    }
-                } else if (System.DateTime.getKind(dateTime) === 1) {
-                    if (System.TimeSpan.neq(offset, System.TimeSpan.zero)) {
-                        throw new System.ArgumentException.$ctor3(System.Environment.GetResourceString("Argument_OffsetUtcMismatch"), "offset");
-                    }
-                }
                 this.m_offsetMinutes = System.DateTimeOffset.ValidateOffset(offset);
                 this.m_dateTime = System.DateTimeOffset.ValidateDate(dateTime, offset);
             },
@@ -31428,7 +32003,7 @@
                     throw new System.ArgumentException.$ctor1(System.Environment.GetResourceString("Arg_MustBeDateTimeOffset"));
                 }
 
-                var objUtc = System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj), System.DateTimeOffset)).UtcDateTime;
+                var objUtc = System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj, System.DateTimeOffset), System.DateTimeOffset)).UtcDateTime;
                 var utc = this.UtcDateTime;
                 if (System.DateTime.gt(utc, objUtc)) {
                     return 1;
@@ -31451,7 +32026,7 @@
             },
             equals: function (obj) {
                 if (Bridge.is(obj, System.DateTimeOffset)) {
-                    return Bridge.equalsT(this.UtcDateTime, System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj), System.DateTimeOffset)).UtcDateTime);
+                    return Bridge.equalsT(this.UtcDateTime, System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj, System.DateTimeOffset), System.DateTimeOffset)).UtcDateTime);
                 }
                 return false;
             },
@@ -31504,19 +32079,19 @@
                 return new System.DateTimeOffset.$ctor1(System.DateTime.toLocalTime(this.UtcDateTime, throwOnOverflow));
             },
             toString: function () {
-                return System.DateTime.format(this.DateTime);
+                return System.DateTime.format(System.DateTime.specifyKind(this.ClockDateTime, 2));
 
             },
             ToString$1: function (format) {
-                return System.DateTime.format(System.DateTime.specifyKind(this.DateTime, 2), format);
+                return System.DateTime.format(System.DateTime.specifyKind(this.ClockDateTime, 2), format);
 
             },
             ToString: function (formatProvider) {
-                return System.DateTime.format(System.DateTime.specifyKind(this.DateTime, 2), null, formatProvider);
+                return System.DateTime.format(System.DateTime.specifyKind(this.ClockDateTime, 2), null, formatProvider);
 
             },
             format: function (format, formatProvider) {
-                return System.DateTime.format(System.DateTime.specifyKind(this.DateTime, 2), format, formatProvider);
+                return System.DateTime.format(System.DateTime.specifyKind(this.ClockDateTime, 2), format, formatProvider);
 
             },
             ToUniversalTime: function () {
@@ -32487,7 +33062,7 @@
                     return false;
                 }
 
-                return this.equalsT(System.Nullable.getValue(Bridge.cast(Bridge.unbox(o), System.Guid)));
+                return this.equalsT(System.Nullable.getValue(Bridge.cast(Bridge.unbox(o, System.Guid), System.Guid)));
             },
             equalsT: function (o) {
                 if ((this._a !== o._a) || (this._b !== o._b) || (this._c !== o._c) || (this._d !== o._d) || (this._e !== o._e) || (this._f !== o._f) || (this._g !== o._g) || (this._h !== o._h) || (this._i !== o._i) || (this._j !== o._j) || (this._k !== o._k)) {
@@ -32657,6 +33232,1483 @@
             $clone: function (to) { return this; }
         }
     });
+
+    // @source ITupleInternal.js
+
+    Bridge.define("System.ITupleInternal", {
+        $kind: "interface"
+    });
+
+    // @source ValueTuple.js
+
+    Bridge.define("System.ValueTuple", {
+        inherits: function () { return [System.IEquatable$1(System.ValueTuple),System.Collections.IStructuralEquatable,System.Collections.IStructuralComparable,System.IComparable,System.IComparable$1(System.ValueTuple)]; },
+        $kind: "struct",
+        statics: {
+            methods: {
+                Create: function () {
+                    return new System.ValueTuple();
+                },
+                Create$1: function (T1, item1) {
+                    return new (System.ValueTuple$1(T1)).$ctor1(item1);
+                },
+                Create$2: function (T1, T2, item1, item2) {
+                    return new (System.ValueTuple$2(T1,T2)).$ctor1(item1, item2);
+                },
+                Create$3: function (T1, T2, T3, item1, item2, item3) {
+                    return new (System.ValueTuple$3(T1,T2,T3)).$ctor1(item1, item2, item3);
+                },
+                Create$4: function (T1, T2, T3, T4, item1, item2, item3, item4) {
+                    return new (System.ValueTuple$4(T1,T2,T3,T4)).$ctor1(item1, item2, item3, item4);
+                },
+                Create$5: function (T1, T2, T3, T4, T5, item1, item2, item3, item4, item5) {
+                    return new (System.ValueTuple$5(T1,T2,T3,T4,T5)).$ctor1(item1, item2, item3, item4, item5);
+                },
+                Create$6: function (T1, T2, T3, T4, T5, T6, item1, item2, item3, item4, item5, item6) {
+                    return new (System.ValueTuple$6(T1,T2,T3,T4,T5,T6)).$ctor1(item1, item2, item3, item4, item5, item6);
+                },
+                Create$7: function (T1, T2, T3, T4, T5, T6, T7, item1, item2, item3, item4, item5, item6, item7) {
+                    return new (System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)).$ctor1(item1, item2, item3, item4, item5, item6, item7);
+                },
+                Create$8: function (T1, T2, T3, T4, T5, T6, T7, T8, item1, item2, item3, item4, item5, item6, item7, item8) {
+                    return new (System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,System.ValueTuple$1(T8))).$ctor1(item1, item2, item3, item4, item5, item6, item7, System.ValueTuple.Create$1(T8, item8));
+                },
+                CombineHashCodes: function (h1, h2) {
+                    return System.Collections.HashHelpers.Combine(System.Collections.HashHelpers.Combine(System.Collections.HashHelpers.RandomSeed, h1), h2);
+                },
+                CombineHashCodes$1: function (h1, h2, h3) {
+                    return System.Collections.HashHelpers.Combine(System.ValueTuple.CombineHashCodes(h1, h2), h3);
+                },
+                CombineHashCodes$2: function (h1, h2, h3, h4) {
+                    return System.Collections.HashHelpers.Combine(System.ValueTuple.CombineHashCodes$1(h1, h2, h3), h4);
+                },
+                CombineHashCodes$3: function (h1, h2, h3, h4, h5) {
+                    return System.Collections.HashHelpers.Combine(System.ValueTuple.CombineHashCodes$2(h1, h2, h3, h4), h5);
+                },
+                CombineHashCodes$4: function (h1, h2, h3, h4, h5, h6) {
+                    return System.Collections.HashHelpers.Combine(System.ValueTuple.CombineHashCodes$3(h1, h2, h3, h4, h5), h6);
+                },
+                CombineHashCodes$5: function (h1, h2, h3, h4, h5, h6, h7) {
+                    return System.Collections.HashHelpers.Combine(System.ValueTuple.CombineHashCodes$4(h1, h2, h3, h4, h5, h6), h7);
+                },
+                CombineHashCodes$6: function (h1, h2, h3, h4, h5, h6, h7, h8) {
+                    return System.Collections.HashHelpers.Combine(System.ValueTuple.CombineHashCodes$5(h1, h2, h3, h4, h5, h6, h7), h8);
+                },
+                getDefaultValue: function () { return new System.ValueTuple(); }
+            }
+        },
+        alias: [
+            "equalsT", "System$IEquatable$1$System$ValueTuple$equalsT",
+            "compareTo", ["System$IComparable$1$System$ValueTuple$compareTo", "System$IComparable$1$compareTo"]
+        ],
+        ctors: {
+            ctor: function () {
+                this.$initialize();
+            }
+        },
+        methods: {
+            equals: function (obj) {
+                return Bridge.is(obj, System.ValueTuple);
+            },
+            equalsT: function (other) {
+                return true;
+            },
+            System$Collections$IStructuralEquatable$Equals: function (other, comparer) {
+                return Bridge.is(other, System.ValueTuple);
+            },
+            System$IComparable$compareTo: function (other) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                return 0;
+            },
+            compareTo: function (other) {
+                return 0;
+            },
+            System$Collections$IStructuralComparable$CompareTo: function (other, comparer) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                return 0;
+            },
+            getHashCode: function () {
+                return 0;
+            },
+            System$Collections$IStructuralEquatable$GetHashCode: function (comparer) {
+                return 0;
+            },
+            toString: function () {
+                return "()";
+            },
+            $clone: function (to) { return this; }
+        }
+    });
+
+    Bridge.define("System.ValueTuple$1", function (T1) { return {
+        inherits: function () { return [System.IEquatable$1(System.ValueTuple$1(T1)),System.Collections.IStructuralEquatable,System.Collections.IStructuralComparable,System.IComparable,System.IComparable$1(System.ValueTuple$1(T1)),System.ITupleInternal]; },
+        $kind: "struct",
+        statics: {
+            fields: {
+                s_t1Comparer: null
+            },
+            ctors: {
+                init: function () {
+                    this.s_t1Comparer = System.Collections.Generic.EqualityComparer$1(T1).def;
+                }
+            },
+            methods: {
+                getDefaultValue: function () { return new (System.ValueTuple$1(T1))(); }
+            }
+        },
+        fields: {
+            Item1: Bridge.getDefaultValue(T1)
+        },
+        props: {
+            System$ITupleInternal$Size: {
+                get: function () {
+                    return 1;
+                }
+            }
+        },
+        alias: [
+            "equalsT", "System$IEquatable$1$System$ValueTuple$1$" + Bridge.getTypeAlias(T1) + "$equalsT",
+            "compareTo", ["System$IComparable$1$System$ValueTuple$1$" + Bridge.getTypeAlias(T1) + "$compareTo", "System$IComparable$1$compareTo"]
+        ],
+        ctors: {
+            $ctor1: function (item1) {
+                this.$initialize();
+                this.Item1 = item1;
+            },
+            ctor: function () {
+                this.$initialize();
+            }
+        },
+        methods: {
+            equals: function (obj) {
+                return Bridge.is(obj, System.ValueTuple$1(T1)) && this.equalsT(System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj, System.ValueTuple$1(T1)), System.ValueTuple$1(T1))));
+            },
+            equalsT: function (other) {
+                return System.ValueTuple$1(T1).s_t1Comparer.equals2(this.Item1, other.Item1);
+            },
+            System$Collections$IStructuralEquatable$Equals: function (other, comparer) {
+                if (other == null || !(Bridge.is(other, System.ValueTuple$1(T1)))) {
+                    return false;
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$1(T1)), System.ValueTuple$1(T1)));
+
+                return comparer.System$Collections$IEqualityComparer$equals(this.Item1, objTuple.Item1);
+            },
+            System$IComparable$compareTo: function (other) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$1(T1)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$1(T1)), System.ValueTuple$1(T1)));
+
+                return new (System.Collections.Generic.Comparer$1(T1))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item1, objTuple.Item1);
+            },
+            compareTo: function (other) {
+                return new (System.Collections.Generic.Comparer$1(T1))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item1, other.Item1);
+            },
+            System$Collections$IStructuralComparable$CompareTo: function (other, comparer) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$1(T1)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$1(T1)), System.ValueTuple$1(T1)));
+
+                return comparer.System$Collections$IComparer$compare(this.Item1, objTuple.Item1);
+            },
+            getHashCode: function () {
+                return System.ValueTuple$1(T1).s_t1Comparer.getHashCode2(this.Item1);
+            },
+            System$Collections$IStructuralEquatable$GetHashCode: function (comparer) {
+                return comparer.System$Collections$IEqualityComparer$getHashCode(this.Item1);
+            },
+            System$ITupleInternal$GetHashCode: function (comparer) {
+                return comparer.System$Collections$IEqualityComparer$getHashCode(this.Item1);
+            },
+            toString: function () {
+                return "(" + ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ")";
+            },
+            System$ITupleInternal$ToStringEnd: function () {
+                return ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ")";
+            },
+            $clone: function (to) {
+                var s = to || new (System.ValueTuple$1(T1))();
+                s.Item1 = this.Item1;
+                return s;
+            }
+        }
+    }; });
+
+    Bridge.define("System.ValueTuple$2", function (T1, T2) { return {
+        inherits: function () { return [System.IEquatable$1(System.ValueTuple$2(T1,T2)),System.Collections.IStructuralEquatable,System.Collections.IStructuralComparable,System.IComparable,System.IComparable$1(System.ValueTuple$2(T1,T2)),System.ITupleInternal]; },
+        $kind: "struct",
+        statics: {
+            fields: {
+                s_t1Comparer: null,
+                s_t2Comparer: null
+            },
+            ctors: {
+                init: function () {
+                    this.s_t1Comparer = System.Collections.Generic.EqualityComparer$1(T1).def;
+                    this.s_t2Comparer = System.Collections.Generic.EqualityComparer$1(T2).def;
+                }
+            },
+            methods: {
+                getDefaultValue: function () { return new (System.ValueTuple$2(T1,T2))(); }
+            }
+        },
+        fields: {
+            Item1: Bridge.getDefaultValue(T1),
+            Item2: Bridge.getDefaultValue(T2)
+        },
+        props: {
+            System$ITupleInternal$Size: {
+                get: function () {
+                    return 2;
+                }
+            }
+        },
+        alias: [
+            "equalsT", "System$IEquatable$1$System$ValueTuple$2$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$equalsT",
+            "compareTo", ["System$IComparable$1$System$ValueTuple$2$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$compareTo", "System$IComparable$1$compareTo"]
+        ],
+        ctors: {
+            $ctor1: function (item1, item2) {
+                this.$initialize();
+                this.Item1 = item1;
+                this.Item2 = item2;
+            },
+            ctor: function () {
+                this.$initialize();
+            }
+        },
+        methods: {
+            equals: function (obj) {
+                return Bridge.is(obj, System.ValueTuple$2(T1,T2)) && this.equalsT(System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj, System.ValueTuple$2(T1,T2)), System.ValueTuple$2(T1,T2))));
+            },
+            equalsT: function (other) {
+                return System.ValueTuple$2(T1,T2).s_t1Comparer.equals2(this.Item1, other.Item1) && System.ValueTuple$2(T1,T2).s_t2Comparer.equals2(this.Item2, other.Item2);
+            },
+            System$Collections$IStructuralEquatable$Equals: function (other, comparer) {
+                if (other == null || !(Bridge.is(other, System.ValueTuple$2(T1,T2)))) {
+                    return false;
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$2(T1,T2)), System.ValueTuple$2(T1,T2)));
+
+                return comparer.System$Collections$IEqualityComparer$equals(this.Item1, objTuple.Item1) && comparer.System$Collections$IEqualityComparer$equals(this.Item2, objTuple.Item2);
+            },
+            System$IComparable$compareTo: function (other) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$2(T1,T2)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                return this.compareTo(System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$2(T1,T2)), System.ValueTuple$2(T1,T2))));
+            },
+            compareTo: function (other) {
+                var c = new (System.Collections.Generic.Comparer$1(T1))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item1, other.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return new (System.Collections.Generic.Comparer$1(T2))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item2, other.Item2);
+            },
+            System$Collections$IStructuralComparable$CompareTo: function (other, comparer) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$2(T1,T2)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$2(T1,T2)), System.ValueTuple$2(T1,T2)));
+
+                var c = comparer.System$Collections$IComparer$compare(this.Item1, objTuple.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return comparer.System$Collections$IComparer$compare(this.Item2, objTuple.Item2);
+            },
+            getHashCode: function () {
+                return System.ValueTuple.CombineHashCodes(System.ValueTuple$2(T1,T2).s_t1Comparer.getHashCode2(this.Item1), System.ValueTuple$2(T1,T2).s_t2Comparer.getHashCode2(this.Item2));
+            },
+            System$Collections$IStructuralEquatable$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            System$ITupleInternal$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            GetHashCodeCore: function (comparer) {
+                return System.ValueTuple.CombineHashCodes(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item1), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item2));
+            },
+            toString: function () {
+                return "(" + ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ")";
+            },
+            System$ITupleInternal$ToStringEnd: function () {
+                return ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ")";
+            },
+            $clone: function (to) {
+                var s = to || new (System.ValueTuple$2(T1,T2))();
+                s.Item1 = this.Item1;
+                s.Item2 = this.Item2;
+                return s;
+            }
+        }
+    }; });
+
+    Bridge.define("System.ValueTuple$3", function (T1, T2, T3) { return {
+        inherits: function () { return [System.IEquatable$1(System.ValueTuple$3(T1,T2,T3)),System.Collections.IStructuralEquatable,System.Collections.IStructuralComparable,System.IComparable,System.IComparable$1(System.ValueTuple$3(T1,T2,T3)),System.ITupleInternal]; },
+        $kind: "struct",
+        statics: {
+            fields: {
+                s_t1Comparer: null,
+                s_t2Comparer: null,
+                s_t3Comparer: null
+            },
+            ctors: {
+                init: function () {
+                    this.s_t1Comparer = System.Collections.Generic.EqualityComparer$1(T1).def;
+                    this.s_t2Comparer = System.Collections.Generic.EqualityComparer$1(T2).def;
+                    this.s_t3Comparer = System.Collections.Generic.EqualityComparer$1(T3).def;
+                }
+            },
+            methods: {
+                getDefaultValue: function () { return new (System.ValueTuple$3(T1,T2,T3))(); }
+            }
+        },
+        fields: {
+            Item1: Bridge.getDefaultValue(T1),
+            Item2: Bridge.getDefaultValue(T2),
+            Item3: Bridge.getDefaultValue(T3)
+        },
+        props: {
+            System$ITupleInternal$Size: {
+                get: function () {
+                    return 3;
+                }
+            }
+        },
+        alias: [
+            "equalsT", "System$IEquatable$1$System$ValueTuple$3$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$equalsT",
+            "compareTo", ["System$IComparable$1$System$ValueTuple$3$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$compareTo", "System$IComparable$1$compareTo"]
+        ],
+        ctors: {
+            $ctor1: function (item1, item2, item3) {
+                this.$initialize();
+                this.Item1 = item1;
+                this.Item2 = item2;
+                this.Item3 = item3;
+            },
+            ctor: function () {
+                this.$initialize();
+            }
+        },
+        methods: {
+            equals: function (obj) {
+                return Bridge.is(obj, System.ValueTuple$3(T1,T2,T3)) && this.equalsT(System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj, System.ValueTuple$3(T1,T2,T3)), System.ValueTuple$3(T1,T2,T3))));
+            },
+            equalsT: function (other) {
+                return System.ValueTuple$3(T1,T2,T3).s_t1Comparer.equals2(this.Item1, other.Item1) && System.ValueTuple$3(T1,T2,T3).s_t2Comparer.equals2(this.Item2, other.Item2) && System.ValueTuple$3(T1,T2,T3).s_t3Comparer.equals2(this.Item3, other.Item3);
+            },
+            System$Collections$IStructuralEquatable$Equals: function (other, comparer) {
+                if (other == null || !(Bridge.is(other, System.ValueTuple$3(T1,T2,T3)))) {
+                    return false;
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$3(T1,T2,T3)), System.ValueTuple$3(T1,T2,T3)));
+
+                return comparer.System$Collections$IEqualityComparer$equals(this.Item1, objTuple.Item1) && comparer.System$Collections$IEqualityComparer$equals(this.Item2, objTuple.Item2) && comparer.System$Collections$IEqualityComparer$equals(this.Item3, objTuple.Item3);
+            },
+            System$IComparable$compareTo: function (other) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$3(T1,T2,T3)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                return this.compareTo(System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$3(T1,T2,T3)), System.ValueTuple$3(T1,T2,T3))));
+            },
+            compareTo: function (other) {
+                var c = new (System.Collections.Generic.Comparer$1(T1))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item1, other.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T2))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item2, other.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return new (System.Collections.Generic.Comparer$1(T3))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item3, other.Item3);
+            },
+            System$Collections$IStructuralComparable$CompareTo: function (other, comparer) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$3(T1,T2,T3)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$3(T1,T2,T3)), System.ValueTuple$3(T1,T2,T3)));
+
+                var c = comparer.System$Collections$IComparer$compare(this.Item1, objTuple.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item2, objTuple.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return comparer.System$Collections$IComparer$compare(this.Item3, objTuple.Item3);
+            },
+            getHashCode: function () {
+                return System.ValueTuple.CombineHashCodes$1(System.ValueTuple$3(T1,T2,T3).s_t1Comparer.getHashCode2(this.Item1), System.ValueTuple$3(T1,T2,T3).s_t2Comparer.getHashCode2(this.Item2), System.ValueTuple$3(T1,T2,T3).s_t3Comparer.getHashCode2(this.Item3));
+            },
+            System$Collections$IStructuralEquatable$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            System$ITupleInternal$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            GetHashCodeCore: function (comparer) {
+                return System.ValueTuple.CombineHashCodes$1(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item1), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item2), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item3));
+            },
+            toString: function () {
+                return "(" + ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ")";
+            },
+            System$ITupleInternal$ToStringEnd: function () {
+                return ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ")";
+            },
+            $clone: function (to) {
+                var s = to || new (System.ValueTuple$3(T1,T2,T3))();
+                s.Item1 = this.Item1;
+                s.Item2 = this.Item2;
+                s.Item3 = this.Item3;
+                return s;
+            }
+        }
+    }; });
+
+    Bridge.define("System.ValueTuple$4", function (T1, T2, T3, T4) { return {
+        inherits: function () { return [System.IEquatable$1(System.ValueTuple$4(T1,T2,T3,T4)),System.Collections.IStructuralEquatable,System.Collections.IStructuralComparable,System.IComparable,System.IComparable$1(System.ValueTuple$4(T1,T2,T3,T4)),System.ITupleInternal]; },
+        $kind: "struct",
+        statics: {
+            fields: {
+                s_t1Comparer: null,
+                s_t2Comparer: null,
+                s_t3Comparer: null,
+                s_t4Comparer: null
+            },
+            ctors: {
+                init: function () {
+                    this.s_t1Comparer = System.Collections.Generic.EqualityComparer$1(T1).def;
+                    this.s_t2Comparer = System.Collections.Generic.EqualityComparer$1(T2).def;
+                    this.s_t3Comparer = System.Collections.Generic.EqualityComparer$1(T3).def;
+                    this.s_t4Comparer = System.Collections.Generic.EqualityComparer$1(T4).def;
+                }
+            },
+            methods: {
+                getDefaultValue: function () { return new (System.ValueTuple$4(T1,T2,T3,T4))(); }
+            }
+        },
+        fields: {
+            Item1: Bridge.getDefaultValue(T1),
+            Item2: Bridge.getDefaultValue(T2),
+            Item3: Bridge.getDefaultValue(T3),
+            Item4: Bridge.getDefaultValue(T4)
+        },
+        props: {
+            System$ITupleInternal$Size: {
+                get: function () {
+                    return 4;
+                }
+            }
+        },
+        alias: [
+            "equalsT", "System$IEquatable$1$System$ValueTuple$4$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$" + Bridge.getTypeAlias(T4) + "$equalsT",
+            "compareTo", ["System$IComparable$1$System$ValueTuple$4$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$" + Bridge.getTypeAlias(T4) + "$compareTo", "System$IComparable$1$compareTo"]
+        ],
+        ctors: {
+            $ctor1: function (item1, item2, item3, item4) {
+                this.$initialize();
+                this.Item1 = item1;
+                this.Item2 = item2;
+                this.Item3 = item3;
+                this.Item4 = item4;
+            },
+            ctor: function () {
+                this.$initialize();
+            }
+        },
+        methods: {
+            equals: function (obj) {
+                return Bridge.is(obj, System.ValueTuple$4(T1,T2,T3,T4)) && this.equalsT(System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj, System.ValueTuple$4(T1,T2,T3,T4)), System.ValueTuple$4(T1,T2,T3,T4))));
+            },
+            equalsT: function (other) {
+                return System.ValueTuple$4(T1,T2,T3,T4).s_t1Comparer.equals2(this.Item1, other.Item1) && System.ValueTuple$4(T1,T2,T3,T4).s_t2Comparer.equals2(this.Item2, other.Item2) && System.ValueTuple$4(T1,T2,T3,T4).s_t3Comparer.equals2(this.Item3, other.Item3) && System.ValueTuple$4(T1,T2,T3,T4).s_t4Comparer.equals2(this.Item4, other.Item4);
+            },
+            System$Collections$IStructuralEquatable$Equals: function (other, comparer) {
+                if (other == null || !(Bridge.is(other, System.ValueTuple$4(T1,T2,T3,T4)))) {
+                    return false;
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$4(T1,T2,T3,T4)), System.ValueTuple$4(T1,T2,T3,T4)));
+
+                return comparer.System$Collections$IEqualityComparer$equals(this.Item1, objTuple.Item1) && comparer.System$Collections$IEqualityComparer$equals(this.Item2, objTuple.Item2) && comparer.System$Collections$IEqualityComparer$equals(this.Item3, objTuple.Item3) && comparer.System$Collections$IEqualityComparer$equals(this.Item4, objTuple.Item4);
+            },
+            System$IComparable$compareTo: function (other) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$4(T1,T2,T3,T4)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                return this.compareTo(System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$4(T1,T2,T3,T4)), System.ValueTuple$4(T1,T2,T3,T4))));
+            },
+            compareTo: function (other) {
+                var c = new (System.Collections.Generic.Comparer$1(T1))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item1, other.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T2))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item2, other.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T3))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item3, other.Item3);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return new (System.Collections.Generic.Comparer$1(T4))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item4, other.Item4);
+            },
+            System$Collections$IStructuralComparable$CompareTo: function (other, comparer) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$4(T1,T2,T3,T4)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$4(T1,T2,T3,T4)), System.ValueTuple$4(T1,T2,T3,T4)));
+
+                var c = comparer.System$Collections$IComparer$compare(this.Item1, objTuple.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item2, objTuple.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item3, objTuple.Item3);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return comparer.System$Collections$IComparer$compare(this.Item4, objTuple.Item4);
+            },
+            getHashCode: function () {
+                return System.ValueTuple.CombineHashCodes$2(System.ValueTuple$4(T1,T2,T3,T4).s_t1Comparer.getHashCode2(this.Item1), System.ValueTuple$4(T1,T2,T3,T4).s_t2Comparer.getHashCode2(this.Item2), System.ValueTuple$4(T1,T2,T3,T4).s_t3Comparer.getHashCode2(this.Item3), System.ValueTuple$4(T1,T2,T3,T4).s_t4Comparer.getHashCode2(this.Item4));
+            },
+            System$Collections$IStructuralEquatable$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            System$ITupleInternal$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            GetHashCodeCore: function (comparer) {
+                return System.ValueTuple.CombineHashCodes$2(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item1), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item2), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item3), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item4));
+            },
+            toString: function () {
+                return "(" + ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ")";
+            },
+            System$ITupleInternal$ToStringEnd: function () {
+                return ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ")";
+            },
+            $clone: function (to) {
+                var s = to || new (System.ValueTuple$4(T1,T2,T3,T4))();
+                s.Item1 = this.Item1;
+                s.Item2 = this.Item2;
+                s.Item3 = this.Item3;
+                s.Item4 = this.Item4;
+                return s;
+            }
+        }
+    }; });
+
+    Bridge.define("System.ValueTuple$5", function (T1, T2, T3, T4, T5) { return {
+        inherits: function () { return [System.IEquatable$1(System.ValueTuple$5(T1,T2,T3,T4,T5)),System.Collections.IStructuralEquatable,System.Collections.IStructuralComparable,System.IComparable,System.IComparable$1(System.ValueTuple$5(T1,T2,T3,T4,T5)),System.ITupleInternal]; },
+        $kind: "struct",
+        statics: {
+            fields: {
+                s_t1Comparer: null,
+                s_t2Comparer: null,
+                s_t3Comparer: null,
+                s_t4Comparer: null,
+                s_t5Comparer: null
+            },
+            ctors: {
+                init: function () {
+                    this.s_t1Comparer = System.Collections.Generic.EqualityComparer$1(T1).def;
+                    this.s_t2Comparer = System.Collections.Generic.EqualityComparer$1(T2).def;
+                    this.s_t3Comparer = System.Collections.Generic.EqualityComparer$1(T3).def;
+                    this.s_t4Comparer = System.Collections.Generic.EqualityComparer$1(T4).def;
+                    this.s_t5Comparer = System.Collections.Generic.EqualityComparer$1(T5).def;
+                }
+            },
+            methods: {
+                getDefaultValue: function () { return new (System.ValueTuple$5(T1,T2,T3,T4,T5))(); }
+            }
+        },
+        fields: {
+            Item1: Bridge.getDefaultValue(T1),
+            Item2: Bridge.getDefaultValue(T2),
+            Item3: Bridge.getDefaultValue(T3),
+            Item4: Bridge.getDefaultValue(T4),
+            Item5: Bridge.getDefaultValue(T5)
+        },
+        props: {
+            System$ITupleInternal$Size: {
+                get: function () {
+                    return 5;
+                }
+            }
+        },
+        alias: [
+            "equalsT", "System$IEquatable$1$System$ValueTuple$5$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$" + Bridge.getTypeAlias(T4) + "$" + Bridge.getTypeAlias(T5) + "$equalsT",
+            "compareTo", ["System$IComparable$1$System$ValueTuple$5$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$" + Bridge.getTypeAlias(T4) + "$" + Bridge.getTypeAlias(T5) + "$compareTo", "System$IComparable$1$compareTo"]
+        ],
+        ctors: {
+            $ctor1: function (item1, item2, item3, item4, item5) {
+                this.$initialize();
+                this.Item1 = item1;
+                this.Item2 = item2;
+                this.Item3 = item3;
+                this.Item4 = item4;
+                this.Item5 = item5;
+            },
+            ctor: function () {
+                this.$initialize();
+            }
+        },
+        methods: {
+            equals: function (obj) {
+                return Bridge.is(obj, System.ValueTuple$5(T1,T2,T3,T4,T5)) && this.equalsT(System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj, System.ValueTuple$5(T1,T2,T3,T4,T5)), System.ValueTuple$5(T1,T2,T3,T4,T5))));
+            },
+            equalsT: function (other) {
+                return System.ValueTuple$5(T1,T2,T3,T4,T5).s_t1Comparer.equals2(this.Item1, other.Item1) && System.ValueTuple$5(T1,T2,T3,T4,T5).s_t2Comparer.equals2(this.Item2, other.Item2) && System.ValueTuple$5(T1,T2,T3,T4,T5).s_t3Comparer.equals2(this.Item3, other.Item3) && System.ValueTuple$5(T1,T2,T3,T4,T5).s_t4Comparer.equals2(this.Item4, other.Item4) && System.ValueTuple$5(T1,T2,T3,T4,T5).s_t5Comparer.equals2(this.Item5, other.Item5);
+            },
+            System$Collections$IStructuralEquatable$Equals: function (other, comparer) {
+                if (other == null || !(Bridge.is(other, System.ValueTuple$5(T1,T2,T3,T4,T5)))) {
+                    return false;
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$5(T1,T2,T3,T4,T5)), System.ValueTuple$5(T1,T2,T3,T4,T5)));
+
+                return comparer.System$Collections$IEqualityComparer$equals(this.Item1, objTuple.Item1) && comparer.System$Collections$IEqualityComparer$equals(this.Item2, objTuple.Item2) && comparer.System$Collections$IEqualityComparer$equals(this.Item3, objTuple.Item3) && comparer.System$Collections$IEqualityComparer$equals(this.Item4, objTuple.Item4) && comparer.System$Collections$IEqualityComparer$equals(this.Item5, objTuple.Item5);
+            },
+            System$IComparable$compareTo: function (other) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$5(T1,T2,T3,T4,T5)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                return this.compareTo(System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$5(T1,T2,T3,T4,T5)), System.ValueTuple$5(T1,T2,T3,T4,T5))));
+            },
+            compareTo: function (other) {
+                var c = new (System.Collections.Generic.Comparer$1(T1))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item1, other.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T2))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item2, other.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T3))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item3, other.Item3);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T4))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item4, other.Item4);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return new (System.Collections.Generic.Comparer$1(T5))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item5, other.Item5);
+            },
+            System$Collections$IStructuralComparable$CompareTo: function (other, comparer) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$5(T1,T2,T3,T4,T5)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$5(T1,T2,T3,T4,T5)), System.ValueTuple$5(T1,T2,T3,T4,T5)));
+
+                var c = comparer.System$Collections$IComparer$compare(this.Item1, objTuple.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item2, objTuple.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item3, objTuple.Item3);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item4, objTuple.Item4);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return comparer.System$Collections$IComparer$compare(this.Item5, objTuple.Item5);
+            },
+            getHashCode: function () {
+                return System.ValueTuple.CombineHashCodes$3(System.ValueTuple$5(T1,T2,T3,T4,T5).s_t1Comparer.getHashCode2(this.Item1), System.ValueTuple$5(T1,T2,T3,T4,T5).s_t2Comparer.getHashCode2(this.Item2), System.ValueTuple$5(T1,T2,T3,T4,T5).s_t3Comparer.getHashCode2(this.Item3), System.ValueTuple$5(T1,T2,T3,T4,T5).s_t4Comparer.getHashCode2(this.Item4), System.ValueTuple$5(T1,T2,T3,T4,T5).s_t5Comparer.getHashCode2(this.Item5));
+            },
+            System$Collections$IStructuralEquatable$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            System$ITupleInternal$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            GetHashCodeCore: function (comparer) {
+                return System.ValueTuple.CombineHashCodes$3(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item1), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item2), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item3), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item4), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item5));
+            },
+            toString: function () {
+                return "(" + ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ", " + ((this.Item5 != null ? Bridge.toString(this.Item5) : null) || "") + ")";
+            },
+            System$ITupleInternal$ToStringEnd: function () {
+                return ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ", " + ((this.Item5 != null ? Bridge.toString(this.Item5) : null) || "") + ")";
+            },
+            $clone: function (to) {
+                var s = to || new (System.ValueTuple$5(T1,T2,T3,T4,T5))();
+                s.Item1 = this.Item1;
+                s.Item2 = this.Item2;
+                s.Item3 = this.Item3;
+                s.Item4 = this.Item4;
+                s.Item5 = this.Item5;
+                return s;
+            }
+        }
+    }; });
+
+    Bridge.define("System.ValueTuple$6", function (T1, T2, T3, T4, T5, T6) { return {
+        inherits: function () { return [System.IEquatable$1(System.ValueTuple$6(T1,T2,T3,T4,T5,T6)),System.Collections.IStructuralEquatable,System.Collections.IStructuralComparable,System.IComparable,System.IComparable$1(System.ValueTuple$6(T1,T2,T3,T4,T5,T6)),System.ITupleInternal]; },
+        $kind: "struct",
+        statics: {
+            fields: {
+                s_t1Comparer: null,
+                s_t2Comparer: null,
+                s_t3Comparer: null,
+                s_t4Comparer: null,
+                s_t5Comparer: null,
+                s_t6Comparer: null
+            },
+            ctors: {
+                init: function () {
+                    this.s_t1Comparer = System.Collections.Generic.EqualityComparer$1(T1).def;
+                    this.s_t2Comparer = System.Collections.Generic.EqualityComparer$1(T2).def;
+                    this.s_t3Comparer = System.Collections.Generic.EqualityComparer$1(T3).def;
+                    this.s_t4Comparer = System.Collections.Generic.EqualityComparer$1(T4).def;
+                    this.s_t5Comparer = System.Collections.Generic.EqualityComparer$1(T5).def;
+                    this.s_t6Comparer = System.Collections.Generic.EqualityComparer$1(T6).def;
+                }
+            },
+            methods: {
+                getDefaultValue: function () { return new (System.ValueTuple$6(T1,T2,T3,T4,T5,T6))(); }
+            }
+        },
+        fields: {
+            Item1: Bridge.getDefaultValue(T1),
+            Item2: Bridge.getDefaultValue(T2),
+            Item3: Bridge.getDefaultValue(T3),
+            Item4: Bridge.getDefaultValue(T4),
+            Item5: Bridge.getDefaultValue(T5),
+            Item6: Bridge.getDefaultValue(T6)
+        },
+        props: {
+            System$ITupleInternal$Size: {
+                get: function () {
+                    return 6;
+                }
+            }
+        },
+        alias: [
+            "equalsT", "System$IEquatable$1$System$ValueTuple$6$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$" + Bridge.getTypeAlias(T4) + "$" + Bridge.getTypeAlias(T5) + "$" + Bridge.getTypeAlias(T6) + "$equalsT",
+            "compareTo", ["System$IComparable$1$System$ValueTuple$6$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$" + Bridge.getTypeAlias(T4) + "$" + Bridge.getTypeAlias(T5) + "$" + Bridge.getTypeAlias(T6) + "$compareTo", "System$IComparable$1$compareTo"]
+        ],
+        ctors: {
+            $ctor1: function (item1, item2, item3, item4, item5, item6) {
+                this.$initialize();
+                this.Item1 = item1;
+                this.Item2 = item2;
+                this.Item3 = item3;
+                this.Item4 = item4;
+                this.Item5 = item5;
+                this.Item6 = item6;
+            },
+            ctor: function () {
+                this.$initialize();
+            }
+        },
+        methods: {
+            equals: function (obj) {
+                return Bridge.is(obj, System.ValueTuple$6(T1,T2,T3,T4,T5,T6)) && this.equalsT(System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj, System.ValueTuple$6(T1,T2,T3,T4,T5,T6)), System.ValueTuple$6(T1,T2,T3,T4,T5,T6))));
+            },
+            equalsT: function (other) {
+                return System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t1Comparer.equals2(this.Item1, other.Item1) && System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t2Comparer.equals2(this.Item2, other.Item2) && System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t3Comparer.equals2(this.Item3, other.Item3) && System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t4Comparer.equals2(this.Item4, other.Item4) && System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t5Comparer.equals2(this.Item5, other.Item5) && System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t6Comparer.equals2(this.Item6, other.Item6);
+            },
+            System$Collections$IStructuralEquatable$Equals: function (other, comparer) {
+                if (other == null || !(Bridge.is(other, System.ValueTuple$6(T1,T2,T3,T4,T5,T6)))) {
+                    return false;
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$6(T1,T2,T3,T4,T5,T6)), System.ValueTuple$6(T1,T2,T3,T4,T5,T6)));
+
+                return comparer.System$Collections$IEqualityComparer$equals(this.Item1, objTuple.Item1) && comparer.System$Collections$IEqualityComparer$equals(this.Item2, objTuple.Item2) && comparer.System$Collections$IEqualityComparer$equals(this.Item3, objTuple.Item3) && comparer.System$Collections$IEqualityComparer$equals(this.Item4, objTuple.Item4) && comparer.System$Collections$IEqualityComparer$equals(this.Item5, objTuple.Item5) && comparer.System$Collections$IEqualityComparer$equals(this.Item6, objTuple.Item6);
+            },
+            System$IComparable$compareTo: function (other) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$6(T1,T2,T3,T4,T5,T6)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                return this.compareTo(System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$6(T1,T2,T3,T4,T5,T6)), System.ValueTuple$6(T1,T2,T3,T4,T5,T6))));
+            },
+            compareTo: function (other) {
+                var c = new (System.Collections.Generic.Comparer$1(T1))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item1, other.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T2))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item2, other.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T3))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item3, other.Item3);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T4))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item4, other.Item4);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T5))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item5, other.Item5);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return new (System.Collections.Generic.Comparer$1(T6))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item6, other.Item6);
+            },
+            System$Collections$IStructuralComparable$CompareTo: function (other, comparer) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$6(T1,T2,T3,T4,T5,T6)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$6(T1,T2,T3,T4,T5,T6)), System.ValueTuple$6(T1,T2,T3,T4,T5,T6)));
+
+                var c = comparer.System$Collections$IComparer$compare(this.Item1, objTuple.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item2, objTuple.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item3, objTuple.Item3);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item4, objTuple.Item4);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item5, objTuple.Item5);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return comparer.System$Collections$IComparer$compare(this.Item6, objTuple.Item6);
+            },
+            getHashCode: function () {
+                return System.ValueTuple.CombineHashCodes$4(System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t1Comparer.getHashCode2(this.Item1), System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t2Comparer.getHashCode2(this.Item2), System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t3Comparer.getHashCode2(this.Item3), System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t4Comparer.getHashCode2(this.Item4), System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t5Comparer.getHashCode2(this.Item5), System.ValueTuple$6(T1,T2,T3,T4,T5,T6).s_t6Comparer.getHashCode2(this.Item6));
+            },
+            System$Collections$IStructuralEquatable$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            System$ITupleInternal$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            GetHashCodeCore: function (comparer) {
+                return System.ValueTuple.CombineHashCodes$4(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item1), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item2), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item3), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item4), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item5), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item6));
+            },
+            toString: function () {
+                return "(" + ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ", " + ((this.Item5 != null ? Bridge.toString(this.Item5) : null) || "") + ", " + ((this.Item6 != null ? Bridge.toString(this.Item6) : null) || "") + ")";
+            },
+            System$ITupleInternal$ToStringEnd: function () {
+                return ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ", " + ((this.Item5 != null ? Bridge.toString(this.Item5) : null) || "") + ", " + ((this.Item6 != null ? Bridge.toString(this.Item6) : null) || "") + ")";
+            },
+            $clone: function (to) {
+                var s = to || new (System.ValueTuple$6(T1,T2,T3,T4,T5,T6))();
+                s.Item1 = this.Item1;
+                s.Item2 = this.Item2;
+                s.Item3 = this.Item3;
+                s.Item4 = this.Item4;
+                s.Item5 = this.Item5;
+                s.Item6 = this.Item6;
+                return s;
+            }
+        }
+    }; });
+
+    Bridge.define("System.ValueTuple$7", function (T1, T2, T3, T4, T5, T6, T7) { return {
+        inherits: function () { return [System.IEquatable$1(System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)),System.Collections.IStructuralEquatable,System.Collections.IStructuralComparable,System.IComparable,System.IComparable$1(System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)),System.ITupleInternal]; },
+        $kind: "struct",
+        statics: {
+            fields: {
+                s_t1Comparer: null,
+                s_t2Comparer: null,
+                s_t3Comparer: null,
+                s_t4Comparer: null,
+                s_t5Comparer: null,
+                s_t6Comparer: null,
+                s_t7Comparer: null
+            },
+            ctors: {
+                init: function () {
+                    this.s_t1Comparer = System.Collections.Generic.EqualityComparer$1(T1).def;
+                    this.s_t2Comparer = System.Collections.Generic.EqualityComparer$1(T2).def;
+                    this.s_t3Comparer = System.Collections.Generic.EqualityComparer$1(T3).def;
+                    this.s_t4Comparer = System.Collections.Generic.EqualityComparer$1(T4).def;
+                    this.s_t5Comparer = System.Collections.Generic.EqualityComparer$1(T5).def;
+                    this.s_t6Comparer = System.Collections.Generic.EqualityComparer$1(T6).def;
+                    this.s_t7Comparer = System.Collections.Generic.EqualityComparer$1(T7).def;
+                }
+            },
+            methods: {
+                getDefaultValue: function () { return new (System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7))(); }
+            }
+        },
+        fields: {
+            Item1: Bridge.getDefaultValue(T1),
+            Item2: Bridge.getDefaultValue(T2),
+            Item3: Bridge.getDefaultValue(T3),
+            Item4: Bridge.getDefaultValue(T4),
+            Item5: Bridge.getDefaultValue(T5),
+            Item6: Bridge.getDefaultValue(T6),
+            Item7: Bridge.getDefaultValue(T7)
+        },
+        props: {
+            System$ITupleInternal$Size: {
+                get: function () {
+                    return 7;
+                }
+            }
+        },
+        alias: [
+            "equalsT", "System$IEquatable$1$System$ValueTuple$7$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$" + Bridge.getTypeAlias(T4) + "$" + Bridge.getTypeAlias(T5) + "$" + Bridge.getTypeAlias(T6) + "$" + Bridge.getTypeAlias(T7) + "$equalsT",
+            "compareTo", ["System$IComparable$1$System$ValueTuple$7$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$" + Bridge.getTypeAlias(T4) + "$" + Bridge.getTypeAlias(T5) + "$" + Bridge.getTypeAlias(T6) + "$" + Bridge.getTypeAlias(T7) + "$compareTo", "System$IComparable$1$compareTo"]
+        ],
+        ctors: {
+            $ctor1: function (item1, item2, item3, item4, item5, item6, item7) {
+                this.$initialize();
+                this.Item1 = item1;
+                this.Item2 = item2;
+                this.Item3 = item3;
+                this.Item4 = item4;
+                this.Item5 = item5;
+                this.Item6 = item6;
+                this.Item7 = item7;
+            },
+            ctor: function () {
+                this.$initialize();
+            }
+        },
+        methods: {
+            equals: function (obj) {
+                return Bridge.is(obj, System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)) && this.equalsT(System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj, System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)), System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7))));
+            },
+            equalsT: function (other) {
+                return System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t1Comparer.equals2(this.Item1, other.Item1) && System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t2Comparer.equals2(this.Item2, other.Item2) && System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t3Comparer.equals2(this.Item3, other.Item3) && System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t4Comparer.equals2(this.Item4, other.Item4) && System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t5Comparer.equals2(this.Item5, other.Item5) && System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t6Comparer.equals2(this.Item6, other.Item6) && System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t7Comparer.equals2(this.Item7, other.Item7);
+            },
+            System$Collections$IStructuralEquatable$Equals: function (other, comparer) {
+                if (other == null || !(Bridge.is(other, System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)))) {
+                    return false;
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)), System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)));
+
+                return comparer.System$Collections$IEqualityComparer$equals(this.Item1, objTuple.Item1) && comparer.System$Collections$IEqualityComparer$equals(this.Item2, objTuple.Item2) && comparer.System$Collections$IEqualityComparer$equals(this.Item3, objTuple.Item3) && comparer.System$Collections$IEqualityComparer$equals(this.Item4, objTuple.Item4) && comparer.System$Collections$IEqualityComparer$equals(this.Item5, objTuple.Item5) && comparer.System$Collections$IEqualityComparer$equals(this.Item6, objTuple.Item6) && comparer.System$Collections$IEqualityComparer$equals(this.Item7, objTuple.Item7);
+            },
+            System$IComparable$compareTo: function (other) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                return this.compareTo(System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)), System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7))));
+            },
+            compareTo: function (other) {
+                var c = new (System.Collections.Generic.Comparer$1(T1))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item1, other.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T2))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item2, other.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T3))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item3, other.Item3);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T4))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item4, other.Item4);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T5))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item5, other.Item5);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T6))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item6, other.Item6);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return new (System.Collections.Generic.Comparer$1(T7))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item7, other.Item7);
+            },
+            System$Collections$IStructuralComparable$CompareTo: function (other, comparer) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)), System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7)));
+
+                var c = comparer.System$Collections$IComparer$compare(this.Item1, objTuple.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item2, objTuple.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item3, objTuple.Item3);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item4, objTuple.Item4);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item5, objTuple.Item5);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item6, objTuple.Item6);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return comparer.System$Collections$IComparer$compare(this.Item7, objTuple.Item7);
+            },
+            getHashCode: function () {
+                return System.ValueTuple.CombineHashCodes$5(System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t1Comparer.getHashCode2(this.Item1), System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t2Comparer.getHashCode2(this.Item2), System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t3Comparer.getHashCode2(this.Item3), System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t4Comparer.getHashCode2(this.Item4), System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t5Comparer.getHashCode2(this.Item5), System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t6Comparer.getHashCode2(this.Item6), System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7).s_t7Comparer.getHashCode2(this.Item7));
+            },
+            System$Collections$IStructuralEquatable$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            System$ITupleInternal$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            GetHashCodeCore: function (comparer) {
+                return System.ValueTuple.CombineHashCodes$5(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item1), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item2), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item3), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item4), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item5), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item6), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item7));
+            },
+            toString: function () {
+                return "(" + ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ", " + ((this.Item5 != null ? Bridge.toString(this.Item5) : null) || "") + ", " + ((this.Item6 != null ? Bridge.toString(this.Item6) : null) || "") + ", " + ((this.Item7 != null ? Bridge.toString(this.Item7) : null) || "") + ")";
+            },
+            System$ITupleInternal$ToStringEnd: function () {
+                return ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ", " + ((this.Item5 != null ? Bridge.toString(this.Item5) : null) || "") + ", " + ((this.Item6 != null ? Bridge.toString(this.Item6) : null) || "") + ", " + ((this.Item7 != null ? Bridge.toString(this.Item7) : null) || "") + ")";
+            },
+            $clone: function (to) {
+                var s = to || new (System.ValueTuple$7(T1,T2,T3,T4,T5,T6,T7))();
+                s.Item1 = this.Item1;
+                s.Item2 = this.Item2;
+                s.Item3 = this.Item3;
+                s.Item4 = this.Item4;
+                s.Item5 = this.Item5;
+                s.Item6 = this.Item6;
+                s.Item7 = this.Item7;
+                return s;
+            }
+        }
+    }; });
+
+    Bridge.define("System.ValueTuple$8", function (T1, T2, T3, T4, T5, T6, T7, TRest) { return {
+        inherits: function () { return [System.IEquatable$1(System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)),System.Collections.IStructuralEquatable,System.Collections.IStructuralComparable,System.IComparable,System.IComparable$1(System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)),System.ITupleInternal]; },
+        $kind: "struct",
+        statics: {
+            fields: {
+                s_t1Comparer: null,
+                s_t2Comparer: null,
+                s_t3Comparer: null,
+                s_t4Comparer: null,
+                s_t5Comparer: null,
+                s_t6Comparer: null,
+                s_t7Comparer: null,
+                s_tRestComparer: null
+            },
+            ctors: {
+                init: function () {
+                    this.s_t1Comparer = System.Collections.Generic.EqualityComparer$1(T1).def;
+                    this.s_t2Comparer = System.Collections.Generic.EqualityComparer$1(T2).def;
+                    this.s_t3Comparer = System.Collections.Generic.EqualityComparer$1(T3).def;
+                    this.s_t4Comparer = System.Collections.Generic.EqualityComparer$1(T4).def;
+                    this.s_t5Comparer = System.Collections.Generic.EqualityComparer$1(T5).def;
+                    this.s_t6Comparer = System.Collections.Generic.EqualityComparer$1(T6).def;
+                    this.s_t7Comparer = System.Collections.Generic.EqualityComparer$1(T7).def;
+                    this.s_tRestComparer = System.Collections.Generic.EqualityComparer$1(TRest).def;
+                }
+            },
+            methods: {
+                getDefaultValue: function () { return new (System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest))(); }
+            }
+        },
+        fields: {
+            Item1: Bridge.getDefaultValue(T1),
+            Item2: Bridge.getDefaultValue(T2),
+            Item3: Bridge.getDefaultValue(T3),
+            Item4: Bridge.getDefaultValue(T4),
+            Item5: Bridge.getDefaultValue(T5),
+            Item6: Bridge.getDefaultValue(T6),
+            Item7: Bridge.getDefaultValue(T7),
+            Rest: Bridge.getDefaultValue(TRest)
+        },
+        props: {
+            System$ITupleInternal$Size: {
+                get: function () {
+                    var rest = Bridge.as(this.Rest, System.ITupleInternal);
+                    return rest == null ? 8 : ((7 + rest.System$ITupleInternal$Size) | 0);
+                }
+            }
+        },
+        alias: [
+            "equalsT", "System$IEquatable$1$System$ValueTuple$8$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$" + Bridge.getTypeAlias(T4) + "$" + Bridge.getTypeAlias(T5) + "$" + Bridge.getTypeAlias(T6) + "$" + Bridge.getTypeAlias(T7) + "$" + Bridge.getTypeAlias(TRest) + "$equalsT",
+            "compareTo", ["System$IComparable$1$System$ValueTuple$8$" + Bridge.getTypeAlias(T1) + "$" + Bridge.getTypeAlias(T2) + "$" + Bridge.getTypeAlias(T3) + "$" + Bridge.getTypeAlias(T4) + "$" + Bridge.getTypeAlias(T5) + "$" + Bridge.getTypeAlias(T6) + "$" + Bridge.getTypeAlias(T7) + "$" + Bridge.getTypeAlias(TRest) + "$compareTo", "System$IComparable$1$compareTo"]
+        ],
+        ctors: {
+            $ctor1: function (item1, item2, item3, item4, item5, item6, item7, rest) {
+                this.$initialize();
+                if (!(Bridge.is(rest, System.ITupleInternal))) {
+                    throw new System.ArgumentException.$ctor1(System.SR.ArgumentException_ValueTupleLastArgumentNotAValueTuple);
+                }
+
+                this.Item1 = item1;
+                this.Item2 = item2;
+                this.Item3 = item3;
+                this.Item4 = item4;
+                this.Item5 = item5;
+                this.Item6 = item6;
+                this.Item7 = item7;
+                this.Rest = rest;
+            },
+            ctor: function () {
+                this.$initialize();
+            }
+        },
+        methods: {
+            equals: function (obj) {
+                return Bridge.is(obj, System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)) && this.equalsT(System.Nullable.getValue(Bridge.cast(Bridge.unbox(obj, System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest))));
+            },
+            equalsT: function (other) {
+                return System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t1Comparer.equals2(this.Item1, other.Item1) && System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t2Comparer.equals2(this.Item2, other.Item2) && System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t3Comparer.equals2(this.Item3, other.Item3) && System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t4Comparer.equals2(this.Item4, other.Item4) && System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t5Comparer.equals2(this.Item5, other.Item5) && System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t6Comparer.equals2(this.Item6, other.Item6) && System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t7Comparer.equals2(this.Item7, other.Item7) && System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_tRestComparer.equals2(this.Rest, other.Rest);
+            },
+            System$Collections$IStructuralEquatable$Equals: function (other, comparer) {
+                if (other == null || !(Bridge.is(other, System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)))) {
+                    return false;
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)));
+
+                return comparer.System$Collections$IEqualityComparer$equals(this.Item1, objTuple.Item1) && comparer.System$Collections$IEqualityComparer$equals(this.Item2, objTuple.Item2) && comparer.System$Collections$IEqualityComparer$equals(this.Item3, objTuple.Item3) && comparer.System$Collections$IEqualityComparer$equals(this.Item4, objTuple.Item4) && comparer.System$Collections$IEqualityComparer$equals(this.Item5, objTuple.Item5) && comparer.System$Collections$IEqualityComparer$equals(this.Item6, objTuple.Item6) && comparer.System$Collections$IEqualityComparer$equals(this.Item7, objTuple.Item7) && comparer.System$Collections$IEqualityComparer$equals(this.Rest, objTuple.Rest);
+            },
+            System$IComparable$compareTo: function (other) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                return this.compareTo(System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest))));
+            },
+            compareTo: function (other) {
+                var c = new (System.Collections.Generic.Comparer$1(T1))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item1, other.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T2))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item2, other.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T3))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item3, other.Item3);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T4))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item4, other.Item4);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T5))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item5, other.Item5);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T6))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item6, other.Item6);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = new (System.Collections.Generic.Comparer$1(T7))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Item7, other.Item7);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return new (System.Collections.Generic.Comparer$1(TRest))(System.Collections.Generic.Comparer$1.$default.fn).compare(this.Rest, other.Rest);
+            },
+            System$Collections$IStructuralComparable$CompareTo: function (other, comparer) {
+                if (other == null) {
+                    return 1;
+                }
+
+                if (!(Bridge.is(other, System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)))) {
+                    throw new System.ArgumentException.$ctor3(System.SR.ArgumentException_ValueTupleIncorrectType, "other");
+                }
+
+                var objTuple = System.Nullable.getValue(Bridge.cast(Bridge.unbox(other, System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest)));
+
+                var c = comparer.System$Collections$IComparer$compare(this.Item1, objTuple.Item1);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item2, objTuple.Item2);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item3, objTuple.Item3);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item4, objTuple.Item4);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item5, objTuple.Item5);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item6, objTuple.Item6);
+                if (c !== 0) {
+                    return c;
+                }
+
+                c = comparer.System$Collections$IComparer$compare(this.Item7, objTuple.Item7);
+                if (c !== 0) {
+                    return c;
+                }
+
+                return comparer.System$Collections$IComparer$compare(this.Rest, objTuple.Rest);
+            },
+            getHashCode: function () {
+                var rest = Bridge.as(this.Rest, System.ITupleInternal);
+                if (rest == null) {
+                    return System.ValueTuple.CombineHashCodes$5(System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t1Comparer.getHashCode2(this.Item1), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t2Comparer.getHashCode2(this.Item2), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t3Comparer.getHashCode2(this.Item3), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t4Comparer.getHashCode2(this.Item4), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t5Comparer.getHashCode2(this.Item5), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t6Comparer.getHashCode2(this.Item6), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t7Comparer.getHashCode2(this.Item7));
+                }
+
+                var size = rest.System$ITupleInternal$Size;
+                if (size >= 8) {
+                    return Bridge.getHashCode(rest);
+                }
+
+                var k = (8 - size) | 0;
+                switch (k) {
+                    case 1: 
+                        return System.ValueTuple.CombineHashCodes(System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t7Comparer.getHashCode2(this.Item7), Bridge.getHashCode(rest));
+                    case 2: 
+                        return System.ValueTuple.CombineHashCodes$1(System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t6Comparer.getHashCode2(this.Item6), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t7Comparer.getHashCode2(this.Item7), Bridge.getHashCode(rest));
+                    case 3: 
+                        return System.ValueTuple.CombineHashCodes$2(System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t5Comparer.getHashCode2(this.Item5), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t6Comparer.getHashCode2(this.Item6), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t7Comparer.getHashCode2(this.Item7), Bridge.getHashCode(rest));
+                    case 4: 
+                        return System.ValueTuple.CombineHashCodes$3(System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t4Comparer.getHashCode2(this.Item4), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t5Comparer.getHashCode2(this.Item5), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t6Comparer.getHashCode2(this.Item6), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t7Comparer.getHashCode2(this.Item7), Bridge.getHashCode(rest));
+                    case 5: 
+                        return System.ValueTuple.CombineHashCodes$4(System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t3Comparer.getHashCode2(this.Item3), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t4Comparer.getHashCode2(this.Item4), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t5Comparer.getHashCode2(this.Item5), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t6Comparer.getHashCode2(this.Item6), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t7Comparer.getHashCode2(this.Item7), Bridge.getHashCode(rest));
+                    case 6: 
+                        return System.ValueTuple.CombineHashCodes$5(System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t2Comparer.getHashCode2(this.Item2), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t3Comparer.getHashCode2(this.Item3), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t4Comparer.getHashCode2(this.Item4), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t5Comparer.getHashCode2(this.Item5), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t6Comparer.getHashCode2(this.Item6), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t7Comparer.getHashCode2(this.Item7), Bridge.getHashCode(rest));
+                    case 7: 
+                    case 8: 
+                        return System.ValueTuple.CombineHashCodes$6(System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t1Comparer.getHashCode2(this.Item1), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t2Comparer.getHashCode2(this.Item2), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t3Comparer.getHashCode2(this.Item3), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t4Comparer.getHashCode2(this.Item4), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t5Comparer.getHashCode2(this.Item5), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t6Comparer.getHashCode2(this.Item6), System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest).s_t7Comparer.getHashCode2(this.Item7), Bridge.getHashCode(rest));
+                }
+
+                return -1;
+            },
+            System$Collections$IStructuralEquatable$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            System$ITupleInternal$GetHashCode: function (comparer) {
+                return this.GetHashCodeCore(comparer);
+            },
+            GetHashCodeCore: function (comparer) {
+                var rest = Bridge.as(this.Rest, System.ITupleInternal);
+                if (rest == null) {
+                    return System.ValueTuple.CombineHashCodes$5(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item1), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item2), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item3), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item4), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item5), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item6), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item7));
+                }
+
+                var size = rest.System$ITupleInternal$Size;
+                if (size >= 8) {
+                    return rest.System$ITupleInternal$GetHashCode(comparer);
+                }
+
+                var k = (8 - size) | 0;
+                switch (k) {
+                    case 1: 
+                        return System.ValueTuple.CombineHashCodes(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item7), rest.System$ITupleInternal$GetHashCode(comparer));
+                    case 2: 
+                        return System.ValueTuple.CombineHashCodes$1(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item6), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item7), rest.System$ITupleInternal$GetHashCode(comparer));
+                    case 3: 
+                        return System.ValueTuple.CombineHashCodes$2(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item5), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item6), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item7), rest.System$ITupleInternal$GetHashCode(comparer));
+                    case 4: 
+                        return System.ValueTuple.CombineHashCodes$3(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item4), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item5), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item6), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item7), rest.System$ITupleInternal$GetHashCode(comparer));
+                    case 5: 
+                        return System.ValueTuple.CombineHashCodes$4(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item3), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item4), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item5), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item6), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item7), rest.System$ITupleInternal$GetHashCode(comparer));
+                    case 6: 
+                        return System.ValueTuple.CombineHashCodes$5(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item2), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item3), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item4), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item5), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item6), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item7), rest.System$ITupleInternal$GetHashCode(comparer));
+                    case 7: 
+                    case 8: 
+                        return System.ValueTuple.CombineHashCodes$6(comparer.System$Collections$IEqualityComparer$getHashCode(this.Item1), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item2), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item3), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item4), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item5), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item6), comparer.System$Collections$IEqualityComparer$getHashCode(this.Item7), rest.System$ITupleInternal$GetHashCode(comparer));
+                }
+
+                return -1;
+            },
+            toString: function () {
+                var rest = Bridge.as(this.Rest, System.ITupleInternal);
+                if (rest == null) {
+                    return "(" + ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ", " + ((this.Item5 != null ? Bridge.toString(this.Item5) : null) || "") + ", " + ((this.Item6 != null ? Bridge.toString(this.Item6) : null) || "") + ", " + ((this.Item7 != null ? Bridge.toString(this.Item7) : null) || "") + ", " + (Bridge.toString(this.Rest) || "") + ")";
+                } else {
+                    return "(" + ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ", " + ((this.Item5 != null ? Bridge.toString(this.Item5) : null) || "") + ", " + ((this.Item6 != null ? Bridge.toString(this.Item6) : null) || "") + ", " + ((this.Item7 != null ? Bridge.toString(this.Item7) : null) || "") + ", " + (rest.System$ITupleInternal$ToStringEnd() || "");
+                }
+            },
+            System$ITupleInternal$ToStringEnd: function () {
+                var rest = Bridge.as(this.Rest, System.ITupleInternal);
+                if (rest == null) {
+                    return ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ", " + ((this.Item5 != null ? Bridge.toString(this.Item5) : null) || "") + ", " + ((this.Item6 != null ? Bridge.toString(this.Item6) : null) || "") + ", " + ((this.Item7 != null ? Bridge.toString(this.Item7) : null) || "") + ", " + (Bridge.toString(this.Rest) || "") + ")";
+                } else {
+                    return ((this.Item1 != null ? Bridge.toString(this.Item1) : null) || "") + ", " + ((this.Item2 != null ? Bridge.toString(this.Item2) : null) || "") + ", " + ((this.Item3 != null ? Bridge.toString(this.Item3) : null) || "") + ", " + ((this.Item4 != null ? Bridge.toString(this.Item4) : null) || "") + ", " + ((this.Item5 != null ? Bridge.toString(this.Item5) : null) || "") + ", " + ((this.Item6 != null ? Bridge.toString(this.Item6) : null) || "") + ", " + ((this.Item7 != null ? Bridge.toString(this.Item7) : null) || "") + ", " + (rest.System$ITupleInternal$ToStringEnd() || "");
+                }
+            },
+            $clone: function (to) {
+                var s = to || new (System.ValueTuple$8(T1,T2,T3,T4,T5,T6,T7,TRest))();
+                s.Item1 = this.Item1;
+                s.Item2 = this.Item2;
+                s.Item3 = this.Item3;
+                s.Item4 = this.Item4;
+                s.Item5 = this.Item5;
+                s.Item6 = this.Item6;
+                s.Item7 = this.Item7;
+                s.Rest = this.Rest;
+                return s;
+            }
+        }
+    }; });
 
     // @source IndexOutOfRangeException.js
 
@@ -38890,6 +40942,8 @@
     Bridge.define("System.SR", {
         statics: {
             fields: {
+                ArgumentException_ValueTupleIncorrectType: null,
+                ArgumentException_ValueTupleLastArgumentNotAValueTuple: null,
                 _lock: null
             },
             props: {
@@ -38897,6 +40951,8 @@
             },
             ctors: {
                 init: function () {
+                    this.ArgumentException_ValueTupleIncorrectType = "Argument must be of type {0}.";
+                    this.ArgumentException_ValueTupleLastArgumentNotAValueTuple = "The last element of an eight element ValueTuple must be a ValueTuple.";
                     this._lock = { };
                 }
             },
@@ -40180,7 +42236,7 @@
         statics: {
             methods: {
                 Escape: function (chars) {
-                    return chars.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+                    return chars.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
                 }
             }
         },
@@ -40219,7 +42275,7 @@
                 var setO = System.Text.UTF7Encoding.Escape("!\"#$%&*;<=>@[]^_`{|}");
                 var setW = System.Text.UTF7Encoding.Escape(" \r\n\t");
 
-                s = s.replace(new RegExp("[^" + setW + setD + (this.allowOptionals ? setO : "") + "]+", 'g'), function (chunk) {return '+' + (chunk === '+' ? '' : encode(chunk)) + '-';});
+                s = s.replace(new RegExp("[^" + setW + setD + (this.allowOptionals ? setO : "") + "]+", "g"), function (chunk) { return "+" + (chunk === "+" ? "" : encode(chunk)) + "-"; });
 
                 var arr = System.String.toCharArray(s, 0, s.length);
 
@@ -40256,7 +42312,7 @@
                 };
 
                 var str = System.String.fromCharArray(bytes, index, count);
-                return str.replace(/\+([A-Za-z0-9\/]*)-?/gi, function (_, chunk) {if (chunk === '') {return _ == '+-' ? '+' : '';}return decode(chunk);});
+                return str.replace(/\+([A-Za-z0-9\/]*)-?/gi, function (_, chunk) { if (chunk === "") { return _ == "+-" ? "+" : ""; } return decode(chunk); });
             },
             GetMaxByteCount: function (charCount) {
                 if (charCount < 0) {
@@ -40298,10 +42354,11 @@
                 b[System.Array.index(Bridge.identity(bi, (bi = (bi + 1) | 0)), b)] = (c & 255);
             }
             var base64Str = System.Convert.toBase64String(b, null, null, null);
-            return base64Str.replace(/=+$/, '');
+            return base64Str.replace(/=+$/, "");
         },
         f2: function (base64) {
             try {
+                if (typeof window === "undefined") { throw new System.Exception(); };
                 var binary_string = window.atob(base64);
                 var len = binary_string.length;
                 var arr = System.Array.init(len, 0, System.Char);
@@ -40313,6 +42370,7 @@
                 for (var i = 0; i < len; i = (i + 1) | 0) {
                     arr[System.Array.index(i, arr)] = binary_string.charCodeAt(i);
                 }
+
                 return arr;
             }
             catch ($e1) {
