@@ -34,7 +34,7 @@
 
   // Delete everything from the output folder
   // Default is false
-  "cleanOutputFolderBeforeBuild": false,
+  "cleanOutputFolderBeforeBuild": true,
 
   // Set to true to enable bridge.report.log generation.
   // Default is false.

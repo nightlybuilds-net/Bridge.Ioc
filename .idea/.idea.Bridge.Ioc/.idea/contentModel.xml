@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ContentModelStore">
-    <e p="$USER_HOME$/Library/Caches/Rider2018.1/resharper-host/local/Transient/ReSharperHost/v12/SolutionCaches/_Bridge.Ioc.347780969.00" t="ExcludeRecursive" />
+    <e p="$USER_HOME$/Library/Caches/Rider2019.1/extResources" t="IncludeRecursive" />
+    <e p="$USER_HOME$/Library/Caches/Rider2019.1/resharper-host/local/Transient/ReSharperHost/v191/SolutionCaches/_Bridge.Ioc.347780969.00" t="ExcludeRecursive" />
+    <e p="$APPLICATION_CONFIG_DIR$/consoles/db" t="IncludeRecursive" />
+    <e p="$APPLICATION_CONFIG_DIR$/consoles/ide" t="IncludeRecursive" />
+    <e p="$APPLICATION_CONFIG_DIR$/extensions" t="IncludeRecursive" />
+    <e p="$APPLICATION_CONFIG_DIR$/scratches" t="IncludeRecursive" />
     <e p="$PROJECT_DIR$" t="IncludeFlat">
       <e p="Bridge.Ioc" t="IncludeRecursive">
         <e p="Abstract" t="Include">
@@ -69,6 +74,32 @@
             <e p="TheTest.cs" t="Include" />
           </e>
           <e p="ITest.cs" t="Include" />
+        </e>
+        <e p="EasyTests" t="Include">
+          <e p="App.cs" t="Include" />
+          <e p="AssertResult.cs" t="Include" />
+          <e p="Asserts" t="Include">
+            <e p="EasyAsserts.cs" t="Include" />
+            <e p="ShouldExtensions.cs" t="Include" />
+          </e>
+          <e p="Attributes" t="Include">
+            <e p="TestAttribute.cs" t="Include" />
+            <e p="TestMethodAttribute.cs" t="Include" />
+          </e>
+          <e p="CollectionManager.cs" t="Include" />
+          <e p="Exceptions" t="Include">
+            <e p="BeFalseException.cs" t="Include" />
+            <e p="BeTrueException.cs" t="Include" />
+            <e p="EasyTestBaseException.cs" t="Include" />
+            <e p="EqualException.cs" t="Include" />
+            <e p="NotEqualException.cs" t="Include" />
+            <e p="ThrowsException.cs" t="Include" />
+          </e>
+          <e p="Runner.cs" t="Include" />
+          <e p="RunnerViewModel.cs" t="Include" />
+          <e p="Test.cs" t="Include" />
+          <e p="TestDescriptor.cs" t="Include" />
+          <e p="TestsCollectionManager.cs" t="Include" />
         </e>
         <e p="obj" t="ExcludeRecursive" />
         <e p="packages.config" t="Include" />

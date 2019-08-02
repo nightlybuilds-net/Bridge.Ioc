@@ -36,32 +36,8 @@
       <HintPath>..\packages\Bridge.Core.17.2.0\lib\net40\Bridge.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="Bridge.EasyTests, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null">
-      <HintPath>..\packages\Bridge.EasyTest.18.0.1\lib\net45\Bridge.EasyTests.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
     <Reference Include="Bridge.Html5, Version=17.2.0.0, Culture=neutral, PublicKeyToken=null">
       <HintPath>..\packages\Bridge.Html5.17.2.0\lib\net40\Bridge.Html5.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="Retyped.Core, Version=1.6.0.0, Culture=neutral, PublicKeyToken=null">
-      <HintPath>..\packages\Retyped.Core.1.6.6733\lib\net40\Retyped.Core.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="Retyped.dom, Version=2.8.2.0, Culture=neutral, PublicKeyToken=null">
-      <HintPath>..\packages\Retyped.dom.2.8.6733\lib\net40\Retyped.dom.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="Retyped.es5, Version=2.8.2.0, Culture=neutral, PublicKeyToken=null">
-      <HintPath>..\packages\Retyped.es5.2.8.6733\lib\net40\Retyped.es5.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="Retyped.knockout, Version=3.4.0.0, Culture=neutral, PublicKeyToken=null">
-      <HintPath>..\packages\Retyped.knockout.3.4.6733\lib\net40\Retyped.knockout.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="Retyped.scripthost, Version=2.8.2.0, Culture=neutral, PublicKeyToken=null">
-      <HintPath>..\packages\Retyped.scripthost.2.8.6733\lib\net40\Retyped.scripthost.dll</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
@@ -74,6 +50,24 @@
   <ItemGroup>
     <Compile Include="Classes\Impl\TheTest.cs" />
     <Compile Include="Classes\ITest.cs" />
+    <Compile Include="EasyTests\App.cs" />
+    <Compile Include="EasyTests\AssertResult.cs" />
+    <Compile Include="EasyTests\Asserts\EasyAsserts.cs" />
+    <Compile Include="EasyTests\Asserts\ShouldExtensions.cs" />
+    <Compile Include="EasyTests\Attributes\TestAttribute.cs" />
+    <Compile Include="EasyTests\Attributes\TestMethodAttribute.cs" />
+    <Compile Include="EasyTests\CollectionManager.cs" />
+    <Compile Include="EasyTests\Exceptions\BeFalseException.cs" />
+    <Compile Include="EasyTests\Exceptions\BeTrueException.cs" />
+    <Compile Include="EasyTests\Exceptions\EasyTestBaseException.cs" />
+    <Compile Include="EasyTests\Exceptions\EqualException.cs" />
+    <Compile Include="EasyTests\Exceptions\NotEqualException.cs" />
+    <Compile Include="EasyTests\Exceptions\ThrowsException.cs" />
+    <Compile Include="EasyTests\Runner.cs" />
+    <Compile Include="EasyTests\RunnerViewModel.cs" />
+    <Compile Include="EasyTests\Test.cs" />
+    <Compile Include="EasyTests\TestDescriptor.cs" />
+    <Compile Include="EasyTests\TestsCollectionManager.cs" />
     <Compile Include="SingleInstance.cs" />
     <Compile Include="TransientInstance.cs" />
   </ItemGroup>
