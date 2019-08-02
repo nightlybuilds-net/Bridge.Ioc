@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+  <metadata>
+    <id>Bridge.Ioc.Sources</id>
+    <version>$version$</version>
+    <title>Bridge.Ioc.Sources</title>
+    <authors>Marco Milani</authors>
+    <owners>Marco Milani</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectUrl>https://github.com/markjackmilian/Bridge.Ioc</projectUrl>
+    <description>A simple Ioc for bridge.Net.
+Sources</description>
+    <summary>A simple Ioc for bridge.Net.
+Sources</summary>
+    <tags>bridge.net, ioc, bridge.spaf, spaf</tags>
+    <dependencies>
+      <dependency id="Bridge" version="17.2.0" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="Bridge.Ioc\Abstract\IIoc.cs" target="content\Spaf\Ioc\Abstract" />
+    <file src="Bridge.Ioc\Abstract\IResolver.cs" target="content\Spaf\Ioc\Abstract" />
+    <file src="Bridge.Ioc\Resolvers\FuncResolver.cs" target="content\Spaf\Ioc\Resolvers" />
+    <file src="Bridge.Ioc\Resolvers\InstanceResolver.cs" target="content\Spaf\Ioc\Resolvers" />
+    <file src="Bridge.Ioc\Resolvers\SingleInstanceResolver.cs" target="content\Spaf\Ioc\Resolvers" />
+    <file src="Bridge.Ioc\Resolvers\TransientResolver.cs" target="content\Spaf\Ioc\Resolvers" />
+    <file src="Bridge.Ioc\BridgeIoc.cs" target="content\Spaf\Ioc" />
+  </files>
+</package>
