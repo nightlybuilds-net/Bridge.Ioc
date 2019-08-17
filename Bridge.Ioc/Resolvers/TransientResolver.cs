@@ -6,30 +6,51 @@ namespace Bridge.Ioc
 {
     public class TransientResolver : IResolver
     {
-        public Func<object> Resolve { get; set; }
+        private static Stack<Type> resolved = new Stack<Type>();
+        private static HashSet<Type> resolving = new HashSet<Type>();
+
+        public Func<object> Resolve { get; private set; }
 
         public TransientResolver(IIoc ioc, Type toresolveType)
         {
-            this.Resolve = () =>
+            Resolve = () =>
             {
                 // get ctor
                 var ctor = toresolveType.GetConstructors().FirstOrDefault();
                 if (ctor == null)
                     throw new Exception($"No ctor found for type {toresolveType.FullName}!");
 
-                // get ctor params
-                var ctorParams = ctor.GetParameters();
-                if (!ctorParams.Any())
-                    return Activator.CreateInstance(toresolveType);
-                else
+                resolved.Push(toresolveType);
+                if (!resolving.Add(toresolveType))
                 {
-                    // recursive resolve
-                    var parameters = new List<object>(ctorParams.Length);
+                    var message = $"Recursive error in type resolving {toresolveType.FullName}! \n {string.Join(" -> ", resolved.Reverse().Select(a => a.FullName))}";
+                    resolved.Pop();
+                    throw new Exception(message);
+                }
 
-                    foreach (var parameterInfo in ctorParams)
-                        parameters.Add(ioc.Resolve(parameterInfo.ParameterType));
+                try
+                {
+                    // get ctor params
+                    var ctorParams = ctor.GetParameters();
+                    if (!ctorParams.Any())
+                        return Activator.CreateInstance(toresolveType);
+                    else
+                    {
+                        // recursive resolve
+                        var parameters = new List<object>(ctorParams.Length);
 
-                    return ctor.Invoke(parameters.ToArray());
+                        foreach (var parameterInfo in ctorParams)
+                        {
+                            parameters.Add(ioc.Resolve(parameterInfo.ParameterType));
+                        }
+
+                        return ctor.Invoke(parameters.ToArray());
+                    }
+                }
+                finally
+                {
+                    resolved.Pop();
+                    resolving.Remove(toresolveType);
                 }
             };
         }
